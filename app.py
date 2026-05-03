@@ -30,6 +30,8 @@ app.config["SQLALCHEMY_DATABASE_URI"] = database_url
 
 db.init_app(app)
 mail = Mail(app)
+print("MAIL_USERNAME:", app.config["MAIL_USERNAME"])
+print("MAIL_PASSWORD exists:", bool(app.config["MAIL_PASSWORD"]))
 login_manager = LoginManager(app)
 login_manager.login_view = "index"
 
@@ -39,14 +41,30 @@ def load_user(user_id):
 
 def send_turn_notification(game, recipient):
     try:
+        game_url = url_for("game", game_id=game.id, _external=True)
+
         msg = Message(
-            "It's your turn!",
+            subject="Your move!",
             recipients=[recipient.email]
         )
-        msg.body = f"Hi {recipient.username}, it's your turn in your chess game! Log in to make your move: http://your-railway-url/game/{game.id}"
+
+        msg.body = f"""
+Hi {recipient.username},
+
+It's your turn in your Daily Chess game.
+
+Play here:
+{game_url}
+
+Good luck!
+"""
+
         mail.send(msg)
+        print(f"Turn email sent to {recipient.email}")
+
     except Exception as e:
         print(f"Email error: {e}")
+
 
 # --- ROUTES ---
 
@@ -176,13 +194,15 @@ def make_move(game_id):
         moves.append(san)
         game.move_history = ",".join(moves)
         game.board_fen = board.fen()
-        game.turn = "black" if game.turn == "white" else "white"
+        next_turn = "black" if game.turn == "white" else "white"
+        game.turn = next_turn
         game.last_move_at = datetime.utcnow()
 
-        # check for game over
         if board.is_checkmate():
             game.status = "finished"
-            game.result = "white_wins" if game.turn == "black" else "black_wins"
+            winner = "white" if next_turn == "black" else "black"
+            game.result = f"{winner}_wins"
+
         elif board.is_stalemate() or board.is_insufficient_material():
             game.status = "finished"
             game.result = "draw"
@@ -191,7 +211,7 @@ def make_move(game_id):
 
         # notify opponent by email
         opponent = game.get_opponent(current_user.id)
-        if opponent and game.status == "active":
+        if opponent and game.status == "active" and opponent.email:
             send_turn_notification(game, opponent)
 
         return {"success": True, "fen": board.fen()}
