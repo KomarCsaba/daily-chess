@@ -32,6 +32,9 @@ app.config["BASE_URL"] = os.environ.get(
     "http://localhost:8080"
 )
 
+app.config["RESEND_API_KEY"] = os.environ.get("RESEND_API_KEY")
+
+
 database_url = os.environ.get("DATABASE_URL", "sqlite:///chess.db")
 if database_url.startswith("postgres://"):
     database_url = database_url.replace("postgres://", "postgresql://", 1)
