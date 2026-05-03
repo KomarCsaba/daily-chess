@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div style="display: flex; gap: 40px; justify-content: center; margin-top: 60px;">
+
+    <div style="background-color: #2a2a2a; padding: 30px; border-radius: 10px; width: 300px;">
+        <h2 style="margin-bottom: 20px;">Login</h2>
+        <form action="/login" method="POST">
+            <div style="margin-bottom: 15px;">
+                <label style="display: block; margin-bottom: 5px; color: #aaa;">Username</label>
+                <input type="text" name="username" required
+                    style="width: 100%; padding: 10px; background-color: #3a3a3a; border: none; border-radius: 6px; color: white; font-size: 14px;">
+            </div>
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 5px; color: #aaa;">Password</label>
+                <input type="password" name="password" required
+                    style="width: 100%; padding: 10px; background-color: #3a3a3a; border: none; border-radius: 6px; color: white; font-size: 14px;">
+            </div>
+            <button type="submit" class="btn" style="width: 100%;">Login</button>
+        </form>
+    </div>
+
+    <div style="background-color: #2a2a2a; padding: 30px; border-radius: 10px; width: 300px;">
+        <h2 style="margin-bottom: 20px;">Register</h2>
+        <form action="/register" method="POST">
+            <div style="margin-bottom: 15px;">
+                <label style="display: block; margin-bottom: 5px; color: #aaa;">Username</label>
+                <input type="text" name="username" required
+                    style="width: 100%; padding: 10px; background-color: #3a3a3a; border: none; border-radius: 6px; color: white; font-size: 14px;">
+            </div>
+            <div style="margin-bottom: 15px;">
+                <label style="display: block; margin-bottom: 5px; color: #aaa;">Email</label>
+                <input type="email" name="email" required
+                    style="width: 100%; padding: 10px; background-color: #3a3a3a; border: none; border-radius: 6px; color: white; font-size: 14px;">
+            </div>
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 5px; color: #aaa;">Password</label>
+                <input type="password" name="password" required
+                    style="width: 100%; padding: 10px; background-color: #3a3a3a; border: none; border-radius: 6px; color: white; font-size: 14px;">
+            </div>
+            <button type="submit" class="btn" style="width: 100%;">Register</button>
+        </form>
+    </div>
+
+</div>
+{% endblock %}

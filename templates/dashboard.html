@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px;">
+    <h1>Your Games</h1>
+    <a href="/new_game" class="btn">+ New Game</a>
+</div>
+
+<!-- join a game by code -->
+<div style="background-color: #2a2a2a; padding: 20px; border-radius: 10px; margin-bottom: 30px;">
+    <h3 style="margin-bottom: 15px;">Join a Game</h3>
+    <form action="/join_by_code" method="POST" style="display: flex; gap: 10px;">
+        <input type="text" name="code" placeholder="Paste game link or ID..."
+            style="flex: 1; padding: 10px; background-color: #3a3a3a; border: none; border-radius: 6px; color: white; font-size: 14px;">
+        <button type="submit" class="btn">Join</button>
+    </form>
+</div>
+
+<!-- active games -->
+{% set active_games = games | selectattr("status", "equalto", "active") | list %}
+{% set waiting_games = games | selectattr("status", "equalto", "waiting") | list %}
+{% set finished_games = games | selectattr("status", "equalto", "finished") | list %}
+
+{% if active_games %}
+<h2 style="margin-bottom: 15px;">Active Games</h2>
+<div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 30px;">
+    {% for game in active_games %}
+    <div style="background-color: #2a2a2a; padding: 20px; border-radius: 10px; display: flex; justify-content: space-between; align-items: center;">
+        <div>
+            <div style="font-size: 16px; margin-bottom: 5px;">
+                vs <strong>{{ game.get_opponent(current_user.id).username if game.get_opponent(current_user.id) else "Unknown" }}</strong>
+            </div>
+            <div style="color: #aaa; font-size: 13px;">
+                You are playing as <strong>{{ "white" if game.white_id == current_user.id else "black" }}</strong>
+                · Last move: {{ game.last_move_at.strftime("%b %d, %Y") }}
+            </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 15px;">
+            {% if game.is_players_turn(current_user.id) %}
+            <span style="color: #5a9e6f; font-weight: bold;">Your turn</span>
+            {% else %}
+            <span style="color: #aaa;">Waiting for opponent</span>
+            {% endif %}
+            <a href="/game/{{ game.id }}" class="btn">Play</a>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+{% if waiting_games %}
+<h2 style="margin-bottom: 15px;">Waiting for Opponent</h2>
+<div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 30px;">
+    {% for game in waiting_games %}
+    <div style="background-color: #2a2a2a; padding: 20px; border-radius: 10px; display: flex; justify-content: space-between; align-items: center;">
+        <div>
+            <div style="color: #aaa; font-size: 13px;">
+                Created {{ game.created_at.strftime("%b %d, %Y") }}
+            </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 15px;">
+            <input type="text" value="{{ request.host_url }}join/{{ game.id }}"
+                style="background-color: #3a3a3a; border: none; border-radius: 6px; color: #aaa; padding: 8px; font-size: 12px; width: 280px;"
+                readonly onclick="this.select()">
+            <a href="/game/{{ game.id }}" class="btn btn-secondary">View</a>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+{% if finished_games %}
+<h2 style="margin-bottom: 15px;">Finished Games</h2>
+<div style="display: flex; flex-direction: column; gap: 10px;">
+    {% for game in finished_games %}
+    <div style="background-color: #2a2a2a; padding: 20px; border-radius: 10px; display: flex; justify-content: space-between; align-items: center;">
+        <div>
+            <div style="font-size: 16px; margin-bottom: 5px;">
+                vs <strong>{{ game.get_opponent(current_user.id).username if game.get_opponent(current_user.id) else "Unknown" }}</strong>
+            </div>
+            <div style="color: #aaa; font-size: 13px;">
+                {% if game.result == "draw" %}
+                    Draw
+                {% elif (game.result == "white_wins" and game.white_id == current_user.id) or (game.result == "black_wins" and game.black_id == current_user.id) %}
+                    You won!
+                {% else %}
+                    You lost
+                {% endif %}
+            </div>
+        </div>
+        <a href="/game/{{ game.id }}" class="btn btn-secondary">Review</a>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+{% if not games %}
+<div style="text-align: center; color: #aaa; margin-top: 60px;">
+    <p style="font-size: 18px; margin-bottom: 10px;">No games yet!</p>
+    <p>Create a new game and share the link with a friend.</p>
+</div>
+{% endif %}
+
+{% endblock %}

@@ -1,0 +1,225 @@
+from flask import Flask, render_template, redirect, url_for, request, flash
+from flask_login import LoginManager, login_user, logout_user, login_required, current_user
+from werkzeug.security import generate_password_hash, check_password_hash
+from flask_mail import Mail, Message
+from models import db, User, Game
+import chess
+import uuid
+import os
+from datetime import datetime
+
+app = Flask(__name__)
+app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev_secret_key")
+app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get("DATABASE_URL", "sqlite:///chess.db")
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+
+# email config
+app.config["MAIL_SERVER"] = "smtp.gmail.com"
+app.config["MAIL_PORT"] = 587
+app.config["MAIL_USE_TLS"] = True
+app.config["MAIL_USERNAME"] = os.environ.get("MAIL_USERNAME")
+app.config["MAIL_PASSWORD"] = os.environ.get("MAIL_PASSWORD")
+app.config["MAIL_DEFAULT_SENDER"] = os.environ.get("MAIL_USERNAME")
+
+db.init_app(app)
+mail = Mail(app)
+login_manager = LoginManager(app)
+login_manager.login_view = "index"
+
+@login_manager.user_loader
+def load_user(user_id):
+    return User.query.get(int(user_id))
+
+def send_turn_notification(game, recipient):
+    try:
+        msg = Message(
+            "It's your turn!",
+            recipients=[recipient.email]
+        )
+        msg.body = f"Hi {recipient.username}, it's your turn in your chess game! Log in to make your move: http://your-railway-url/game/{game.id}"
+        mail.send(msg)
+    except Exception as e:
+        print(f"Email error: {e}")
+
+# --- ROUTES ---
+
+@app.route("/")
+def index():
+    if current_user.is_authenticated:
+        return redirect(url_for("dashboard"))
+    return render_template("index.html")
+
+@app.route("/register", methods=["POST"])
+def register():
+    username = request.form.get("username")
+    email = request.form.get("email")
+    password = request.form.get("password")
+
+    if User.query.filter_by(username=username).first():
+        flash("Username already taken")
+        return redirect(url_for("index"))
+
+    if User.query.filter_by(email=email).first():
+        flash("Email already registered")
+        return redirect(url_for("index"))
+
+    user = User(
+        username=username,
+        email=email,
+        password=generate_password_hash(password)
+    )
+    db.session.add(user)
+    db.session.commit()
+    login_user(user)
+    return redirect(url_for("dashboard"))
+
+@app.route("/login", methods=["POST"])
+def login():
+    username = request.form.get("username")
+    password = request.form.get("password")
+    user = User.query.filter_by(username=username).first()
+
+    if not user or not check_password_hash(user.password, password):
+        flash("Invalid username or password")
+        return redirect(url_for("index"))
+
+    login_user(user)
+    return redirect(url_for("dashboard"))
+
+@app.route("/logout")
+@login_required
+def logout():
+    logout_user()
+    return redirect(url_for("index"))
+
+@app.route("/dashboard")
+@login_required
+def dashboard():
+    games = current_user.get_games()
+    return render_template("dashboard.html", games=games)
+
+@app.route("/new_game")
+@login_required
+def new_game():
+    game = Game(
+        id=str(uuid.uuid4()),
+        white_id=current_user.id,
+        board_fen=chess.Board().fen(),
+        status="waiting"
+    )
+    db.session.add(game)
+    db.session.commit()
+    return redirect(url_for("game", game_id=game.id))
+
+@app.route("/join/<game_id>")
+@login_required
+def join_game(game_id):
+    game = Game.query.get(game_id)
+
+    if not game:
+        flash("Game not found")
+        return redirect(url_for("dashboard"))
+
+    if game.status != "waiting":
+        flash("Game already started")
+        return redirect(url_for("dashboard"))
+
+    if game.white_id == current_user.id:
+        flash("You can't join your own game")
+        return redirect(url_for("dashboard"))
+
+    game.black_id = current_user.id
+    game.status = "active"
+    db.session.commit()
+    return redirect(url_for("game", game_id=game.id))
+
+@app.route("/game/<game_id>")
+@login_required
+def game(game_id):
+    game = Game.query.get(game_id)
+    if not game:
+        flash("Game not found")
+        return redirect(url_for("dashboard"))
+    return render_template("game.html", game=game)
+
+@app.route("/move/<game_id>", methods=["POST"])
+@login_required
+def make_move(game_id):
+    game = Game.query.get(game_id)
+
+    if not game or game.status != "active":
+        return {"error": "Game not found or not active"}, 400
+
+    if not game.is_players_turn(current_user.id):
+        return {"error": "Not your turn"}, 400
+
+    move_uci = request.json.get("move")
+
+    board = chess.Board(game.board_fen)
+    try:
+        move = chess.Move.from_uci(move_uci)
+        if move not in board.legal_moves:
+            return {"error": "Illegal move"}, 400
+
+        board.push(move)
+
+        # update move history
+        moves = game.get_moves_list()
+        moves.append(move_uci)
+        game.move_history = ",".join(moves)
+        game.board_fen = board.fen()
+        game.turn = "black" if game.turn == "white" else "white"
+        game.last_move_at = datetime.utcnow()
+
+        # check for game over
+        if board.is_checkmate():
+            game.status = "finished"
+            game.result = "white_wins" if game.turn == "black" else "black_wins"
+        elif board.is_stalemate() or board.is_insufficient_material():
+            game.status = "finished"
+            game.result = "draw"
+
+        db.session.commit()
+
+        # notify opponent by email
+        opponent = game.get_opponent(current_user.id)
+        if opponent and game.status == "active":
+            send_turn_notification(game, opponent)
+
+        return {"success": True, "fen": board.fen()}
+
+    except Exception as e:
+        print(f"Move error: {e}")
+        return {"error": str(e)}, 400
+
+
+@app.route("/legal_moves/<game_id>/<int:col>/<int:row>")
+@login_required
+def legal_moves(game_id, col, row):
+    game = Game.query.get(game_id)
+    if not game:
+        return {"moves": []}
+
+    board = chess.Board(game.board_fen)
+    square = chess.square(col, 7 - row)
+    moves = []
+    for move in board.legal_moves:
+        if move.from_square == square:
+            to_col = chess.square_file(move.to_square)
+            to_row = 7 - chess.square_rank(move.to_square)
+            moves.append(f"{to_col},{to_row}")
+
+    return {"moves": moves}
+
+@app.route("/join_by_code", methods=["POST"])
+@login_required
+def join_by_code():
+    code = request.form.get("code", "").strip()
+    # extract game id from full URL or just use it directly
+    game_id = code.split("/join/")[-1] if "/join/" in code else code
+    return redirect(url_for("join_game", game_id=game_id))
+
+if __name__ == "__main__":
+    with app.app_context():
+        db.create_all()
+    app.run(debug=True)

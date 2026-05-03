@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Daily Chess</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background-color: #1a1a1a;
+            color: white;
+            font-family: Arial, sans-serif;
+            min-height: 100vh;
+        }
+
+        nav {
+            background-color: #2a2a2a;
+            padding: 15px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #3a3a3a;
+        }
+
+        nav a {
+            color: white;
+            text-decoration: none;
+            font-size: 18px;
+            font-weight: bold;
+        }
+
+        nav .nav-links {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+        }
+
+        nav .nav-links a {
+            font-size: 14px;
+            font-weight: normal;
+            color: #aaa;
+        }
+
+        nav .nav-links a:hover {
+            color: white;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 40px auto;
+            padding: 0 20px;
+        }
+
+        .flash {
+            background-color: #c0392b;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+        }
+
+        .btn {
+            background-color: #5a9e6f;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .btn:hover {
+            background-color: #4a8e5f;
+        }
+
+        .btn-secondary {
+            background-color: #3a3a3a;
+        }
+
+        .btn-secondary:hover {
+            background-color: #4a4a4a;
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <a href="/dashboard">♟ Daily Chess</a>
+        {% if current_user.is_authenticated %}
+        <div class="nav-links">
+            <span style="color: #aaa">{{ current_user.username }}</span>
+            <a href="/logout">Logout</a>
+        </div>
+        {% endif %}
+    </nav>
+
+    <div class="container">
+        {% with messages = get_flashed_messages() %}
+            {% if messages %}
+                {% for message in messages %}
+                    <div class="flash">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        {% block content %}{% endblock %}
+    </div>
+</body>
+</html>
