@@ -184,11 +184,11 @@ def game(game_id):
         return redirect(url_for("dashboard"))
     return render_template("game.html", game=game)
 
+
 @app.route("/move/<game_id>", methods=["POST"])
 @login_required
 def make_move(game_id):
     game = Game.query.get(game_id)
-
     if not game or game.status != "active":
         return {"error": "Game not found or not active"}, 400
 
@@ -203,32 +203,42 @@ def make_move(game_id):
         if move not in board.legal_moves:
             return {"error": "Illegal move"}, 400
 
-        san = board.san(move)  # generate SAN before pushing
+        san = board.san(move)
         board.push(move)
-        # Clear any pending draw offer when a move is made
-        game.draw_offered_by = None
 
-        # update move history
+        # Update move history
         moves = game.get_moves_list()
         moves.append(san)
         game.move_history = ",".join(moves)
         game.board_fen = board.fen()
+
         next_turn = "black" if game.turn == "white" else "white"
         game.turn = next_turn
         game.last_move_at = datetime.utcnow()
+
+        # IMPORTANT FIX:
+        # Only clear draw offer if the OPPONENT is the one moving
+        # (i.e. they are implicitly declining the draw)
+        if game.draw_offered_by == current_user.id:
+            # Offerer is moving → keep the offer active
+            pass
+        else:
+            # Opponent is moving → they decline the draw
+            game.draw_offered_by = None
+
+        # ... rest of the code (checkmate, stalemate, etc.)
 
         if board.is_checkmate():
             game.status = "finished"
             winner = "white" if next_turn == "black" else "black"
             game.result = f"{winner}_wins"
-
         elif board.is_stalemate() or board.is_insufficient_material():
             game.status = "finished"
             game.result = "draw"
 
         db.session.commit()
 
-        # notify opponent by email
+        # notify opponent...
         opponent = game.get_opponent(current_user.id)
         if opponent and game.status == "active" and opponent.email:
             threading.Thread(
