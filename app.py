@@ -205,6 +205,8 @@ def make_move(game_id):
 
         san = board.san(move)  # generate SAN before pushing
         board.push(move)
+        # Clear any pending draw offer when a move is made
+        game.draw_offered_by = None
 
         # update move history
         moves = game.get_moves_list()
@@ -258,6 +260,57 @@ def legal_moves(game_id, col, row):
             moves.append(f"{to_col},{to_row}")
 
     return {"moves": moves}
+
+@app.route("/resign/<game_id>", methods=["POST"])
+@login_required
+def resign(game_id):
+    game = Game.query.get(game_id)
+    if not game or game.status != "active":
+        flash("Invalid game")
+        return redirect(url_for("dashboard"))
+
+    if not game.is_players_turn(current_user.id):
+        flash("Not your turn")
+        return redirect(url_for("game", game_id=game_id))
+
+    # Determine winner
+    if game.white_id == current_user.id:
+        game.result = "black_wins"
+    else:
+        game.result = "white_wins"
+
+    game.status = "finished"
+    db.session.commit()
+    flash("You resigned")
+    return redirect(url_for("game", game_id=game_id))
+
+
+@app.route("/offer_draw/<game_id>", methods=["POST"])
+@login_required
+def offer_draw(game_id):
+    game = Game.query.get(game_id)
+    if not game or game.status != "active" or not game.is_players_turn(current_user.id):
+        return redirect(url_for("game", game_id=game_id))
+
+    game.draw_offered_by = current_user.id
+    db.session.commit()
+    flash("Draw offered")
+    return redirect(url_for("game", game_id=game_id))
+
+
+@app.route("/accept_draw/<game_id>", methods=["POST"])
+@login_required
+def accept_draw(game_id):
+    game = Game.query.get(game_id)
+    if not game or game.status != "active":
+        return redirect(url_for("dashboard"))
+
+    if game.draw_offered_by and game.draw_offered_by != current_user.id:
+        game.status = "finished"
+        game.result = "draw"
+        db.session.commit()
+        flash("Draw accepted")
+    return redirect(url_for("game", game_id=game_id))
 
 @app.route("/join_by_code", methods=["POST"])
 @login_required

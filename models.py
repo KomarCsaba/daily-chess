@@ -4,7 +4,6 @@ from datetime import datetime
 
 db = SQLAlchemy()
 
-
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
@@ -23,18 +22,21 @@ class User(UserMixin, db.Model):
 
 
 class Game(db.Model):
-    id = db.Column(db.String(36), primary_key=True)  # uuid
+    id = db.Column(db.String(36), primary_key=True)
     white_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
-    black_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)  # nullable until someone joins
+    black_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
 
-    board_fen = db.Column(db.String(200), nullable=False, default="startpos")  # stores board state
-    turn = db.Column(db.String(5), default="white")  # whose turn it is
-    status = db.Column(db.String(20), default="waiting")  # waiting, active, finished
-    result = db.Column(db.String(20), nullable=True)  # white_wins, black_wins, draw
+    board_fen = db.Column(db.String(200), nullable=False, default="startpos")
+    turn = db.Column(db.String(5), default="white")
+    status = db.Column(db.String(20), default="waiting")
+    result = db.Column(db.String(20), nullable=True)
 
-    move_history = db.Column(db.Text, default="")  # moves separated by commas
+    move_history = db.Column(db.Text, default="")
     last_move_at = db.Column(db.DateTime, default=datetime.utcnow)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # NEW
+    draw_offered_by = db.Column(db.Integer, nullable=True)
 
     def get_moves_list(self):
         if not self.move_history:

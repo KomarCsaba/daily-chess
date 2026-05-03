@@ -58,6 +58,31 @@
             <div style="font-size: 13px; color: #aaa; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px;">Moves</div>
             <div id="moves" style="font-size: 13px; max-height: 400px; overflow-y: auto;"></div>
         </div>
+
+        <!-- Actions -->
+        <div style="background-color: #2a2a2a; border-radius: 10px; padding: 15px; margin-top: 15px;">
+            <div style="font-size: 13px; color: #aaa; margin-bottom: 10px;">Actions</div>
+
+            {% if game.status == "active" and game.is_players_turn(current_user.id) %}
+                <form action="/offer_draw/{{ game.id }}" method="POST" style="margin-bottom: 8px;">
+                    <button type="submit" class="btn btn-secondary" style="width: 100%;">Offer Draw</button>
+                </form>
+
+                <form action="/resign/{{ game.id }}" method="POST" onsubmit="return confirm('Are you sure you want to resign?')">
+                    <button type="submit" class="btn" style="width: 100%; background-color: #c0392b;">Resign</button>
+                </form>
+            {% endif %}
+
+            {% if game.draw_offered_by and game.draw_offered_by != current_user.id and game.is_players_turn(current_user.id) %}
+                <div style="margin-top: 10px; padding: 10px; background-color: #3a3a3a; border-radius: 6px;">
+                    <p style="color: #5a9e6f; margin-bottom: 8px;">Opponent offered a draw</p>
+                    <form action="/accept_draw/{{ game.id }}" method="POST" style="display: inline;">
+                        <button type="submit" class="btn" style="background-color: #5a9e6f;">Accept Draw</button>
+                    </form>
+                </div>
+            {% endif %}
+        </div>
+
     </div>
 </div>
 
@@ -301,5 +326,12 @@
     buildBoard();
     updateBoard();
     buildMoveList();
+
+    // Auto-refresh when waiting for opponent
+    if (!isMyTurn && gameStatus === "active") {
+        setInterval(() => {
+            location.reload();
+        }, 4000);  // every 4 seconds
+    }
 </script>
 {% endblock %}
