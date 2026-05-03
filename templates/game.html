@@ -3,179 +3,94 @@
 {% block content %}
 <div style="display: flex; gap: 20px; justify-content: center; align-items: flex-start;">
 
-    <!-- board section -->
+    <!-- Board Section -->
     <div>
-        <div style="margin-bottom: 10px; color: #aaa; font-size: 14px;">
-            {% if game.status == "waiting" %}
-                Waiting for opponent to join...
-            {% elif game.status == "finished" %}
-                Game over —
-                {% if game.result == "draw" %}
-                    Draw!
-                {% elif (game.result == "white_wins" and game.white_id == current_user.id) or (game.result == "black_wins" and game.black_id == current_user.id) %}
-                    You won!
-                {% else %}
-                    You lost!
-                {% endif %}
-            {% elif game.is_players_turn(current_user.id) %}
-                <span style="color: #5a9e6f; font-weight: bold;">Your turn</span>
-            {% else %}
-                Waiting for opponent's move...
-            {% endif %}
-        </div>
+        <div id="status" style="margin-bottom: 10px; font-size: 15px; min-height: 24px;"></div>
 
-        <!-- opponent name -->
+        <!-- Opponent -->
         <div style="margin-bottom: 8px; font-size: 14px; color: #aaa;">
-            {{ game.get_opponent(current_user.id).username if game.get_opponent(current_user.id) else "Waiting..." }}
+            {{ game.get_opponent(current_user.id).username if game.get_opponent(current_user.id) else "Waiting for opponent..." }}
         </div>
 
-        <!-- board -->
-        <div id="board" style="
-            display: grid;
-            grid-template-columns: repeat(8, 70px);
-            grid-template-rows: repeat(8, 70px);
-            border: 2px solid #555;
-        "></div>
+        <!-- Board -->
+        <div id="board" style="display: grid; grid-template-columns: repeat(8, 70px); grid-template-rows: repeat(8, 70px); border: 3px solid #555; background: #222;"></div>
 
-        <!-- your name -->
-        <div style="margin-top: 8px; font-size: 14px; color: white;">
+        <!-- Your name -->
+        <div style="margin-top: 8px; font-size: 14px; color: white; text-align: right;">
             {{ current_user.username }} (you)
         </div>
     </div>
 
-    <!-- side panel -->
-    <div style="width: 200px;">
-        <!-- game info -->
+    <!-- Side Panel -->
+    <div style="width: 220px;">
+        <!-- Game Info -->
         <div style="background-color: #2a2a2a; border-radius: 10px; padding: 15px; margin-bottom: 15px;">
-            <div style="font-size: 13px; color: #aaa; margin-bottom: 5px;">Game ID</div>
-            <input type="text" value="{{ request.host_url }}join/{{ game.id }}"
-                style="width: 100%; background-color: #3a3a3a; border: none; border-radius: 6px; color: #aaa; padding: 6px; font-size: 11px;"
-                readonly onclick="this.select()">
+            <div style="font-size: 13px; color: #aaa;">Game ID</div>
+            <input type="text" value="{{ request.host_url }}join/{{ game.id }}" readonly
+                   style="width: 100%; background: #3a3a3a; border: none; border-radius: 6px; color: #aaa; padding: 8px; font-size: 12px; margin-top: 6px;">
         </div>
 
-        <!-- move list -->
+        <!-- Moves -->
         <div style="background-color: #2a2a2a; border-radius: 10px; padding: 15px;">
-            <div style="font-size: 13px; color: #aaa; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px;">Moves</div>
-            <div id="moves" style="font-size: 13px; max-height: 400px; overflow-y: auto;"></div>
+            <div style="font-size: 13px; color: #aaa; margin-bottom: 10px;">Moves</div>
+            <div id="moves" style="font-size: 13px; max-height: 380px; overflow-y: auto; line-height: 1.4;"></div>
         </div>
 
         <!-- Actions -->
-        <div style="background-color: #2a2a2a; border-radius: 10px; padding: 15px; margin-top: 15px;">
-            <div style="font-size: 13px; color: #aaa; margin-bottom: 10px;">Actions</div>
-
-            {% if game.status == "active" and game.is_players_turn(current_user.id) %}
-                <form action="/offer_draw/{{ game.id }}" method="POST" style="margin-bottom: 8px;">
-                    <button type="submit" class="btn btn-secondary" style="width: 100%;">Offer Draw</button>
-                </form>
-
-                <form action="/resign/{{ game.id }}" method="POST" onsubmit="return confirm('Are you sure you want to resign?')">
-                    <button type="submit" class="btn" style="width: 100%; background-color: #c0392b;">Resign</button>
-                </form>
-            {% endif %}
-
-            {% if game.draw_offered_by and game.draw_offered_by != current_user.id and game.is_players_turn(current_user.id) %}
-                <div style="margin-top: 10px; padding: 10px; background-color: #3a3a3a; border-radius: 6px;">
-                    <p style="color: #5a9e6f; margin-bottom: 8px;">Opponent offered a draw</p>
-                    <form action="/accept_draw/{{ game.id }}" method="POST" style="display: inline;">
-                        <button type="submit" class="btn" style="background-color: #5a9e6f;">Accept Draw</button>
-                    </form>
-                </div>
-            {% endif %}
-            {% if game.status == "finished" %}
-                <div style="margin-top: 20px; text-align: center;">
-                    <a href="/rematch/{{ game.id }}" class="btn" style="font-size: 16px; padding: 12px 24px;">
-                        🔄 Rematch
-                    </a>
-                </div>
-            {% endif %}
-        </div>
-
+        <div id="actions" style="margin-top: 15px;"></div>
     </div>
 </div>
 
 <style>
     .square {
-        width: 70px;
-        height: 70px;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        font-size: 46px;
-        cursor: pointer;
-        user-select: none;
+        width: 70px; height: 70px;
+        display: flex; justify-content: center; align-items: center;
+        font-size: 48px; cursor: pointer; user-select: none;
         position: relative;
     }
     .light { background-color: #f0d9b5; }
     .dark { background-color: #b58863; }
     .selected { background-color: #7fc97f !important; }
-    .last-move { background-color: #f6f669 !important; opacity: 0.8; }
-    .in-check { background-color: #ff6b6b !important; }
+    .last-move { background-color: #ffe066 !important; }
     .possible-move::after {
-        content: "";
-        position: absolute;
-        width: 30%;
-        height: 30%;
-        background-color: rgba(0, 0, 0, 0.2);
+        content: ""; position: absolute;
+        width: 28%; height: 28%; background: rgba(0,0,0,0.3);
         border-radius: 50%;
     }
     .possible-move.has-piece::after {
-        width: 100%;
-        height: 100%;
-        background-color: transparent;
-        box-shadow: inset 0 0 0 6px rgba(0, 0, 0, 0.2);
-        border-radius: 50%;
+        width: 85%; height: 85%; background: transparent;
+        box-shadow: inset 0 0 0 5px rgba(0,0,0,0.35);
     }
-    .piece-white {
-        color: white;
-        text-shadow: 0 0 2px #000, 0 0 2px #000;
-    }
-    .piece-black {
-        color: #1a1a1a;
-        text-shadow: 0 0 2px #fff, 0 0 2px #fff;
-    }
-    .move-row {
-        display: flex;
-        gap: 5px;
-        margin-bottom: 4px;
-    }
-    .move-number { color: #666; width: 25px; }
-    .move-white, .move-black {
-        width: 70px;
-        padding: 2px 4px;
-        border-radius: 3px;
-    }
-    .move-white:hover, .move-black:hover {
-        background-color: #3a3a3a;
-    }
+    .piece-white { color: white; text-shadow: 0 2px 4px #000; }
+    .piece-black { color: #1a1a1a; text-shadow: 0 2px 4px #fff; }
+
+    #status.your-turn { color: #5a9e6f; font-weight: bold; }
+    #status.waiting { color: #aaa; }
 </style>
 
 <script>
-    const PIECES = {
-        "K": "♔", "Q": "♕", "R": "♖", "B": "♗", "N": "♘", "P": "♙",
-        "k": "♚", "q": "♛", "r": "♜", "b": "♝", "n": "♞", "p": "♟"
-    };
+    const PIECES = { "K":"♔","Q":"♕","R":"♖","B":"♗","N":"♘","P":"♙","k":"♚","q":"♛","r":"♜","b":"♝","n":"♞","p":"♟" };
 
-    const myColor = "{{ 'white' if game.white_id == current_user.id else 'black' }}";
-    const gameStatus = "{{ game.status }}";
-    const isMyTurn = {{ 'true' if game.is_players_turn(current_user.id) else 'false' }};
     const gameId = "{{ game.id }}";
-
+    const myColor = "{{ 'white' if game.white_id == current_user.id else 'black' }}";
+    let currentFen = "{{ game.board_fen }}";
     let selectedSquare = null;
     let legalMoves = [];
-    let currentFen = "{{ game.board_fen }}";
+    let isMyTurn = {{ 'true' if game.is_players_turn(current_user.id) else 'false' }};
+    let gameStatus = "{{ game.status }}";
+
+    let pollInterval = null;
 
     function fenToBoard(fen) {
         const pieces = {};
         const rows = fen.split(" ")[0].split("/");
-        for (let row = 0; row < 8; row++) {
-            let col = 0;
-            for (let char of rows[row]) {
+        for (let r = 0; r < 8; r++) {
+            let c = 0;
+            for (let char of rows[r]) {
                 if (isNaN(char)) {
-                    pieces[`${col},${row}`] = char;
-                    col++;
-                } else {
-                    col += parseInt(char);
-                }
+                    pieces[`${c},${r}`] = char;
+                    c++;
+                } else c += parseInt(char);
             }
         }
         return pieces;
@@ -190,42 +105,41 @@
         boardEl.innerHTML = "";
         const rows = myColor === "black" ? [7,6,5,4,3,2,1,0] : [0,1,2,3,4,5,6,7];
         const cols = myColor === "black" ? [7,6,5,4,3,2,1,0] : [0,1,2,3,4,5,6,7];
+
         for (let row of rows) {
             for (let col of cols) {
                 const square = document.createElement("div");
-                square.className = "square " + ((row + col) % 2 === 0 ? "light" : "dark");
+                square.className = `square ${(row + col) % 2 === 0 ? "light" : "dark"}`;
                 square.dataset.col = col;
                 square.dataset.row = row;
-                if (gameStatus === "active" && isMyTurn) {
-                    square.addEventListener("click", onSquareClick);
-                }
+                square.addEventListener("click", onSquareClick);
                 boardEl.appendChild(square);
             }
         }
     }
 
-    function updateBoard() {
+    function updateBoard(highlightLastMove = true) {
         const pieces = fenToBoard(currentFen);
         const squares = document.querySelectorAll(".square");
+
         squares.forEach(sq => {
             const col = parseInt(sq.dataset.col);
             const row = parseInt(sq.dataset.row);
             const key = `${col},${row}`;
 
-            sq.className = "square " + ((row + col) % 2 === 0 ? "light" : "dark");
+            // Reset classes
+            sq.className = `square ${(row + col) % 2 === 0 ? "light" : "dark"}`;
             sq.textContent = "";
 
             if (pieces[key]) {
                 sq.textContent = PIECES[pieces[key]];
-                const isWhitePiece = pieces[key] === pieces[key].toUpperCase();
-                sq.classList.add(isWhitePiece ? "piece-white" : "piece-black");
+                sq.classList.add(pieces[key] === pieces[key].toUpperCase() ? "piece-white" : "piece-black");
             }
 
             if (selectedSquare && selectedSquare.col === col && selectedSquare.row === row) {
                 sq.classList.add("selected");
             }
-
-            if (legalMoves.includes(`${col},${row}`)) {
+            if (legalMoves.some(m => m.col === col && m.row === row)) {
                 sq.classList.add("possible-move");
                 if (pieces[key]) sq.classList.add("has-piece");
             }
@@ -235,16 +149,20 @@
     async function getLegalMoves(col, row) {
         const res = await fetch(`/legal_moves/${gameId}/${col}/${row}`);
         const data = await res.json();
-        legalMoves = data.moves;
+        legalMoves = data.moves.map(m => {
+            const [c, r] = m.split(",").map(Number);
+            return {col: c, row: r};
+        });
         updateBoard();
     }
 
     async function onSquareClick(e) {
+        if (!isMyTurn || gameStatus !== "active") return;
+
         const col = parseInt(e.currentTarget.dataset.col);
         const row = parseInt(e.currentTarget.dataset.row);
         const pieces = fenToBoard(currentFen);
-        const key = `${col},${row}`;
-        const piece = pieces[key];
+        const piece = pieces[`${col},${row}`];
 
         if (selectedSquare === null) {
             const isMyPiece = piece && (
@@ -256,89 +174,101 @@
                 await getLegalMoves(col, row);
             }
         } else {
-            const isMyPiece = piece && (
-                (myColor === "white" && piece === piece.toUpperCase()) ||
-                (myColor === "black" && piece === piece.toLowerCase())
-            );
-            if (isMyPiece) {
-                selectedSquare = { col, row };
-                legalMoves = [];
-                await getLegalMoves(col, row);
-                return;
-            }
-
+            // Try to make move
             const from = colRowToUci(selectedSquare.col, selectedSquare.row);
             const to = colRowToUci(col, row);
-            let move = from + to;
+            let moveStr = from + to;
 
             const fromPiece = pieces[`${selectedSquare.col},${selectedSquare.row}`];
-            if (fromPiece && fromPiece.toLowerCase() === "p") {
-                if ((myColor === "white" && row === 0) || (myColor === "black" && row === 7)) {
-                    move += "q";
-                }
+            if (fromPiece?.toLowerCase() === "p" && ((myColor === "white" && row === 0) || (myColor === "black" && row === 7))) {
+                moveStr += "q";
             }
 
-            const res = await fetch(`/move/${gameId}`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ move })
-            });
-
-            const data = await res.json();
-            if (data.success) {
-                currentFen = data.fen;
-                selectedSquare = null;
-                legalMoves = [];
-                updateBoard();
-                setTimeout(() => location.reload(), 500);
-            } else {
-                selectedSquare = null;
-                legalMoves = [];
-                updateBoard();
-            }
+            await makeMove(moveStr);
         }
     }
 
-    function buildMoveList() {
-        const movesEl = document.getElementById("moves");
-        const moveHistory = "{{ game.move_history }}".split(",").filter(m => m);
-        movesEl.innerHTML = "";
-        for (let i = 0; i < moveHistory.length; i += 2) {
-            const row = document.createElement("div");
-            row.className = "move-row";
+    async function makeMove(move) {
+        const res = await fetch(`/move/${gameId}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ move })
+        });
 
-            const number = document.createElement("span");
-            number.className = "move-number";
-            number.textContent = `${Math.floor(i/2) + 1}.`;
+        const data = await res.json();
 
-            const white = document.createElement("span");
-            white.className = "move-white";
-            white.textContent = moveHistory[i];
+        if (data.success) {
+            currentFen = data.fen;
+            selectedSquare = null;
+            legalMoves = [];
+            updateBoard();
+            updateMoveList();
+            updateStatus();
 
-            row.appendChild(number);
-            row.appendChild(white);
-
-            if (moveHistory[i+1]) {
-                const black = document.createElement("span");
-                black.className = "move-black";
-                black.textContent = moveHistory[i+1];
-                row.appendChild(black);
-            }
-
-            movesEl.appendChild(row);
+            // Slight delay for visual satisfaction
+            setTimeout(() => {
+                if (data.game_status === "active") startPolling();
+            }, 300);
+        } else {
+            alert(data.error || "Illegal move");
+            selectedSquare = null;
+            legalMoves = [];
+            updateBoard();
         }
+    }
+
+    function updateStatus() {
+        const statusEl = document.getElementById("status");
+        if (gameStatus === "finished") {
+            statusEl.textContent = "Game Over";
+            statusEl.className = "";
+        } else if (isMyTurn) {
+            statusEl.textContent = "Your turn";
+            statusEl.className = "your-turn";
+        } else {
+            statusEl.textContent = "Waiting for opponent...";
+            statusEl.className = "waiting";
+        }
+    }
+
+    async function updateMoveList() {
+        const res = await fetch(`/moves/${gameId}`);
+        const data = await res.json();
+        const movesEl = document.getElementById("moves");
+        movesEl.innerHTML = "";
+        // ... (I'll expand this if needed)
+        data.moves.forEach((move, i) => {
+            const div = document.createElement("div");
+            div.textContent = move;
+            movesEl.appendChild(div);
+        });
         movesEl.scrollTop = movesEl.scrollHeight;
     }
 
+    function startPolling() {
+        if (pollInterval) clearInterval(pollInterval);
+        pollInterval = setInterval(async () => {
+            if (isMyTurn || gameStatus !== "active") return;
+
+            const res = await fetch(`/game_state/${gameId}`);
+            const data = await res.json();
+
+            if (data.fen && data.fen !== currentFen) {
+                currentFen = data.fen;
+                isMyTurn = data.is_my_turn;
+                gameStatus = data.status;
+                updateBoard();
+                updateMoveList();
+                updateStatus();
+            }
+        }, 2500);
+    }
+
+    // Initialize
     buildBoard();
     updateBoard();
-    buildMoveList();
-
-    // Auto-refresh when waiting for opponent
-    if (!isMyTurn && gameStatus === "active") {
-        setInterval(() => {
-            location.reload();
-        }, 4000);  // every 4 seconds
-    }
+    updateStatus();
+    updateMoveList();
+    if (!isMyTurn && gameStatus === "active") startPolling();
 </script>
 {% endblock %}
