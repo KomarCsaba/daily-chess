@@ -185,10 +185,22 @@ def game(game_id):
     return render_template("game.html", game=game)
 
 
+@app.route("/moves/<game_id>")
+@login_required
+def get_moves(game_id):
+    game = Game.query.get(game_id)
+    if not game:
+        return {"moves": []}
+
+    moves = game.get_moves_list()
+    return {"moves": moves}
+
+
 @app.route("/move/<game_id>", methods=["POST"])
 @login_required
 def make_move(game_id):
     game = Game.query.get(game_id)
+
     if not game or game.status != "active":
         return {"error": "Game not found or not active"}, 400
 
@@ -206,7 +218,7 @@ def make_move(game_id):
         san = board.san(move)
         board.push(move)
 
-        # Update move history
+        # Update game
         moves = game.get_moves_list()
         moves.append(san)
         game.move_history = ",".join(moves)
@@ -216,18 +228,11 @@ def make_move(game_id):
         game.turn = next_turn
         game.last_move_at = datetime.utcnow()
 
-        # IMPORTANT FIX:
-        # Only clear draw offer if the OPPONENT is the one moving
-        # (i.e. they are implicitly declining the draw)
-        if game.draw_offered_by == current_user.id:
-            # Offerer is moving → keep the offer active
-            pass
-        else:
-            # Opponent is moving → they decline the draw
+        # Clear draw offer only if opponent moved
+        if game.draw_offered_by != current_user.id:
             game.draw_offered_by = None
 
-        # ... rest of the code (checkmate, stalemate, etc.)
-
+        # Check game end
         if board.is_checkmate():
             game.status = "finished"
             winner = "white" if next_turn == "black" else "black"
@@ -238,7 +243,7 @@ def make_move(game_id):
 
         db.session.commit()
 
-        # notify opponent...
+        # Notify opponent
         opponent = game.get_opponent(current_user.id)
         if opponent and game.status == "active" and opponent.email:
             threading.Thread(
@@ -246,11 +251,15 @@ def make_move(game_id):
                 args=(game, opponent)
             ).start()
 
-        return {"success": True, "fen": board.fen()}
+        return {
+            "success": True,
+            "fen": board.fen(),
+            "game_status": game.status
+        }
 
     except Exception as e:
         print(f"Move error: {e}")
-        return {"error": str(e)}, 400
+        return {"error": "Invalid move"}, 400
 
 @app.route("/rematch/<game_id>")
 @login_required
@@ -308,6 +317,22 @@ def legal_moves(game_id, col, row):
             moves.append(f"{to_col},{to_row}")
 
     return {"moves": moves}
+
+@app.route("/game_state/<game_id>")
+@login_required
+def game_state(game_id):
+    game = Game.query.get(game_id)
+    if not game:
+        return {"error": "Game not found"}, 404
+
+    is_my_turn = game.is_players_turn(current_user.id)
+
+    return {
+        "fen": game.board_fen,
+        "status": game.status,
+        "is_my_turn": is_my_turn,
+        "result": game.result
+    }
 
 @app.route("/resign/<game_id>", methods=["POST"])
 @login_required
