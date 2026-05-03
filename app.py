@@ -6,6 +6,7 @@ from models import db, User, Game
 import chess
 import uuid
 import os
+import threading
 from datetime import datetime
 import logging
 logging.basicConfig(level=logging.DEBUG)
@@ -19,6 +20,7 @@ app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["MAIL_SERVER"] = "smtp.gmail.com"
 app.config["MAIL_PORT"] = 587
 app.config["MAIL_USE_TLS"] = True
+app.config["MAIL_TIMEOUT"] = 10
 app.config["MAIL_USERNAME"] = os.environ.get("MAIL_USERNAME")
 app.config["MAIL_PASSWORD"] = os.environ.get("MAIL_PASSWORD")
 app.config["MAIL_DEFAULT_SENDER"] = os.environ.get("MAIL_USERNAME")
@@ -212,7 +214,10 @@ def make_move(game_id):
         # notify opponent by email
         opponent = game.get_opponent(current_user.id)
         if opponent and game.status == "active" and opponent.email:
-            send_turn_notification(game, opponent)
+            threading.Thread(
+                target=send_turn_notification,
+                args=(game, opponent)
+            ).start()
 
         return {"success": True, "fen": board.fen()}
 
