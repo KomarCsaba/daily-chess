@@ -9,6 +9,8 @@ import os
 import threading
 from datetime import datetime
 import logging
+import requests
+
 logging.basicConfig(level=logging.DEBUG)
 
 app = Flask(__name__)
@@ -47,31 +49,35 @@ def load_user(user_id):
     return User.query.get(int(user_id))
 
 def send_turn_notification(game, recipient):
-    with app.app_context():
-        try:
-            game_url = f"{app.config['BASE_URL']}/game/{game.id}"
+    try:
+        game_url = f"{app.config['BASE_URL']}/game/{game.id}"
 
-            msg = Message(
-                subject="Your move!",
-                recipients=[recipient.email]
-            )
-
-            msg.body = f"""
+        requests.post(
+            "https://api.resend.com/emails",
+            headers={
+                "Authorization": f"Bearer {app.config['RESEND_API_KEY']}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "from": "Daily Chess <onboarding@resend.dev>",
+                "to": recipient.email,
+                "subject": "Your move!",
+                "text": f"""
 Hi {recipient.username},
 
 It's your turn in your Daily Chess game.
 
 Play here:
 {game_url}
-
-Good luck!
 """
+            }
+        )
 
-            mail.send(msg)
-            print(f"Turn email sent to {recipient.email}")
+        print(f"Email sent to {recipient.email}")
 
-        except Exception as e:
-            print(f"Email error: {e}")
+    except Exception as e:
+        print(f"Email error: {e}")
+
 
 
 # --- ROUTES ---
