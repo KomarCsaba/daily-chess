@@ -81,6 +81,13 @@
                     </form>
                 </div>
             {% endif %}
+            {% if game.status == "finished" %}
+                <div style="margin-top: 20px; text-align: center;">
+                    <a href="/rematch/{{ game.id }}" class="btn" style="font-size: 16px; padding: 12px 24px;">
+                        🔄 Rematch
+                    </a>
+                </div>
+            {% endif %}
         </div>
 
     </div>

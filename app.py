@@ -252,6 +252,44 @@ def make_move(game_id):
         print(f"Move error: {e}")
         return {"error": str(e)}, 400
 
+@app.route("/rematch/<game_id>")
+@login_required
+def rematch(game_id):
+    old_game = Game.query.get(game_id)
+    if not old_game:
+        flash("Game not found")
+        return redirect(url_for("dashboard"))
+
+    # Only participants can request rematch
+    if current_user.id not in (old_game.white_id, old_game.black_id):
+        flash("Not your game")
+        return redirect(url_for("dashboard"))
+
+    # Create new game with colors swapped
+    new_game = Game(
+        id=str(uuid.uuid4()),
+        white_id=old_game.black_id,      # Swap colors
+        black_id=old_game.white_id,
+        board_fen=chess.Board().fen(),
+        status="waiting",
+        turn="white"
+    )
+    db.session.add(new_game)
+    db.session.commit()
+
+    # If the current user was black in the old game, they become white now
+    # and can auto-join as white
+    if old_game.white_id == current_user.id:
+        # Current user was White → now becomes Black, so we need opponent to join
+        flash("Rematch created! Share the link with your opponent.")
+        return redirect(url_for("game", game_id=new_game.id))
+    else:
+        # Current user was Black → now becomes White, auto-join as white
+        new_game.black_id = current_user.id
+        new_game.status = "active"
+        db.session.commit()
+        flash("Rematch started!")
+        return redirect(url_for("game", game_id=new_game.id))
 
 @app.route("/legal_moves/<game_id>/<int:col>/<int:row>")
 @login_required
