@@ -168,11 +168,12 @@ def make_move(game_id):
         if move not in board.legal_moves:
             return {"error": "Illegal move"}, 400
 
+        san = board.san(move)  # generate SAN before pushing
         board.push(move)
 
         # update move history
         moves = game.get_moves_list()
-        moves.append(move_uci)
+        moves.append(san)
         game.move_history = ",".join(moves)
         game.board_fen = board.fen()
         game.turn = "black" if game.turn == "white" else "white"
