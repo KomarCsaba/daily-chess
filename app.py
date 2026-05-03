@@ -25,6 +25,11 @@ app.config["MAIL_USERNAME"] = os.environ.get("MAIL_USERNAME")
 app.config["MAIL_PASSWORD"] = os.environ.get("MAIL_PASSWORD")
 app.config["MAIL_DEFAULT_SENDER"] = os.environ.get("MAIL_USERNAME")
 
+app.config["BASE_URL"] = os.environ.get(
+    "BASE_URL",
+    "http://localhost:8080"
+)
+
 database_url = os.environ.get("DATABASE_URL", "sqlite:///chess.db")
 if database_url.startswith("postgres://"):
     database_url = database_url.replace("postgres://", "postgresql://", 1)
@@ -42,15 +47,16 @@ def load_user(user_id):
     return User.query.get(int(user_id))
 
 def send_turn_notification(game, recipient):
-    try:
-        game_url = url_for("game", game_id=game.id, _external=True)
+    with app.app_context():
+        try:
+            game_url = f"{app.config['BASE_URL']}/game/{game.id}"
 
-        msg = Message(
-            subject="Your move!",
-            recipients=[recipient.email]
-        )
+            msg = Message(
+                subject="Your move!",
+                recipients=[recipient.email]
+            )
 
-        msg.body = f"""
+            msg.body = f"""
 Hi {recipient.username},
 
 It's your turn in your Daily Chess game.
@@ -61,11 +67,11 @@ Play here:
 Good luck!
 """
 
-        mail.send(msg)
-        print(f"Turn email sent to {recipient.email}")
+            mail.send(msg)
+            print(f"Turn email sent to {recipient.email}")
 
-    except Exception as e:
-        print(f"Email error: {e}")
+        except Exception as e:
+            print(f"Email error: {e}")
 
 
 # --- ROUTES ---
