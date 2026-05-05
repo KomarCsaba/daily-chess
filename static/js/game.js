@@ -10,18 +10,8 @@ const {
 } = window.GAME_CONFIG;
 
 const PIECES = {
-    K: "♔",
-    Q: "♕",
-    R: "♖",
-    B: "♗",
-    N: "♘",
-    P: "♙",
-    k: "♚",
-    q: "♛",
-    r: "♜",
-    b: "♝",
-    n: "♞",
-    p: "♟"
+    K: "♔", Q: "♕", R: "♖", B: "♗", N: "♘", P: "♙",
+    k: "♚", q: "♛", r: "♜", b: "♝", n: "♞", p: "♟"
 };
 
 let currentFen = initialFen;
@@ -30,12 +20,52 @@ let gameStatus = initialStatus;
 
 let selectedSquare = null;
 let legalMoves = [];
-let pollInterval = null;
 
 let currentDrawOfferedBy = drawOfferedBy;
 let currentResult = gameResult;
 
 let checkedKingSquare = null;
+
+/* =========================
+   WebSocket Setup
+========================= */
+
+const socket = io();
+
+socket.on("connect", () => {
+    socket.emit("join_game", { game_id: gameId });
+});
+
+socket.on("game_update", async (data) => {
+    const wasMyTurn = isMyTurn;
+
+    currentFen = data.fen;
+    gameStatus = data.status;
+    currentResult = data.result;
+    currentDrawOfferedBy = data.draw_offered_by ?? null;
+
+    // Determine whose turn it is from the server payload
+    if (data.white_id && data.black_id) {
+        const myColorFromId = data.white_id == myId ? "white" : "black";
+        isMyTurn = data.turn === myColorFromId && gameStatus === "active";
+    } else {
+        // Fallback: re-fetch is_my_turn from REST if IDs aren't in payload
+        try {
+            const res = await fetch(`/game_state/${gameId}`);
+            const stateData = await res.json();
+            isMyTurn = stateData.is_my_turn;
+        } catch (e) {
+            console.error("Failed to fetch turn state", e);
+        }
+    }
+
+    clearSelection();
+    await updateCheckHighlight();
+    renderMoveList(data.move_history || []);
+    updateBoard();
+    updateStatus();
+    updateActions();
+});
 
 /* =========================
    Utilities
@@ -47,7 +77,6 @@ function fenToBoard(fen) {
 
     for (let r = 0; r < 8; r++) {
         let c = 0;
-
         for (const char of rows[r]) {
             if (isNaN(char)) {
                 pieces[`${c},${r}`] = char;
@@ -57,7 +86,6 @@ function fenToBoard(fen) {
             }
         }
     }
-
     return pieces;
 }
 
@@ -67,7 +95,6 @@ function colRowToUci(col, row) {
 
 function isPlayersPiece(piece) {
     if (!piece) return false;
-
     return (
         (myColor === "white" && piece === piece.toUpperCase()) ||
         (myColor === "black" && piece === piece.toLowerCase())
@@ -87,29 +114,16 @@ function buildBoard() {
     const boardEl = document.getElementById("board");
     boardEl.innerHTML = "";
 
-    const rows =
-        myColor === "black"
-            ? [7, 6, 5, 4, 3, 2, 1, 0]
-            : [0, 1, 2, 3, 4, 5, 6, 7];
-
-    const cols =
-        myColor === "black"
-            ? [7, 6, 5, 4, 3, 2, 1, 0]
-            : [0, 1, 2, 3, 4, 5, 6, 7];
+    const rows = myColor === "black" ? [7,6,5,4,3,2,1,0] : [0,1,2,3,4,5,6,7];
+    const cols = myColor === "black" ? [7,6,5,4,3,2,1,0] : [0,1,2,3,4,5,6,7];
 
     for (const row of rows) {
         for (const col of cols) {
             const square = document.createElement("div");
-
-            square.className = `square ${
-                (row + col) % 2 === 0 ? "light" : "dark"
-            }`;
-
+            square.className = `square ${(row + col) % 2 === 0 ? "light" : "dark"}`;
             square.dataset.col = col;
             square.dataset.row = row;
-
             square.addEventListener("click", onSquareClick);
-
             boardEl.appendChild(square);
         }
     }
@@ -122,55 +136,28 @@ function updateBoard() {
     squares.forEach(square => {
         const col = parseInt(square.dataset.col);
         const row = parseInt(square.dataset.row);
-
         const key = `${col},${row}`;
         const piece = pieces[key];
 
-        square.className = `square ${
-            (row + col) % 2 === 0 ? "light" : "dark"
-        }`;
-
+        square.className = `square ${(row + col) % 2 === 0 ? "light" : "dark"}`;
         square.textContent = "";
 
-        // Render piece
         if (piece) {
             square.textContent = PIECES[piece];
-
-            square.classList.add(
-                piece === piece.toUpperCase()
-                    ? "piece-white"
-                    : "piece-black"
-            );
+            square.classList.add(piece === piece.toUpperCase() ? "piece-white" : "piece-black");
         }
 
-        // Selected square
-        if (
-            selectedSquare &&
-            selectedSquare.col === col &&
-            selectedSquare.row === row
-        ) {
+        if (selectedSquare && selectedSquare.col === col && selectedSquare.row === row) {
             square.classList.add("selected");
         }
 
-        // Legal move indicators
-        const isLegalMove = legalMoves.some(
-            move => move.col === col && move.row === row
-        );
-
+        const isLegalMove = legalMoves.some(move => move.col === col && move.row === row);
         if (isLegalMove) {
             square.classList.add("possible-move");
-
-            if (piece) {
-                square.classList.add("has-piece");
-            }
+            if (piece) square.classList.add("has-piece");
         }
 
-        // Check highlight
-        if (
-            checkedKingSquare !== null &&
-            checkedKingSquare.col === col &&
-            checkedKingSquare.row === row
-        ) {
+        if (checkedKingSquare !== null && checkedKingSquare.col === col && checkedKingSquare.row === row) {
             square.classList.add("check");
         }
     });
@@ -182,21 +169,12 @@ function updateBoard() {
 
 async function getLegalMoves(col, row) {
     try {
-        const res = await fetch(
-            `/legal_moves/${gameId}/${col}/${row}`
-        );
-
+        const res = await fetch(`/legal_moves/${gameId}/${col}/${row}`);
         const data = await res.json();
-
         legalMoves = data.moves.map(move => {
             const [c, r] = move.split(",").map(Number);
-
-            return {
-                col: c,
-                row: r
-            };
+            return { col: c, row: r };
         });
-
         updateBoard();
     } catch (err) {
         console.error("Failed to fetch legal moves", err);
@@ -208,9 +186,7 @@ async function getLegalMoves(col, row) {
 ========================= */
 
 async function onSquareClick(event) {
-    if (!isMyTurn || gameStatus !== "active") {
-        return;
-    }
+    if (!isMyTurn || gameStatus !== "active") return;
 
     const col = parseInt(event.currentTarget.dataset.col);
     const row = parseInt(event.currentTarget.dataset.row);
@@ -218,57 +194,34 @@ async function onSquareClick(event) {
     const pieces = fenToBoard(currentFen);
     const piece = pieces[`${col},${row}`];
 
-    // Selecting a piece
     if (selectedSquare === null) {
         if (isPlayersPiece(piece)) {
             selectedSquare = { col, row };
-
             await getLegalMoves(col, row);
         }
-
         return;
     }
 
-    // Clicking same square deselects
-    if (
-        selectedSquare.col === col &&
-        selectedSquare.row === row
-    ) {
+    if (selectedSquare.col === col && selectedSquare.row === row) {
         clearSelection();
         updateBoard();
         return;
     }
 
-    // Selecting another own piece
     if (isPlayersPiece(piece)) {
         selectedSquare = { col, row };
-
         await getLegalMoves(col, row);
         return;
     }
 
-    // Attempt move
-    const from = colRowToUci(
-        selectedSquare.col,
-        selectedSquare.row
-    );
-
+    const from = colRowToUci(selectedSquare.col, selectedSquare.row);
     const to = colRowToUci(col, row);
-
     let moveStr = from + to;
 
-    // Auto queen promotion
-    const fromPiece =
-        pieces[
-            `${selectedSquare.col},${selectedSquare.row}`
-        ];
-
+    const fromPiece = pieces[`${selectedSquare.col},${selectedSquare.row}`];
     if (
         fromPiece?.toLowerCase() === "p" &&
-        (
-            (myColor === "white" && row === 0) ||
-            (myColor === "black" && row === 7)
-        )
+        ((myColor === "white" && row === 0) || (myColor === "black" && row === 7))
     ) {
         moveStr += "q";
     }
@@ -284,9 +237,7 @@ async function makeMove(move) {
     try {
         const res = await fetch(`/move/${gameId}`, {
             method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ move })
         });
 
@@ -294,30 +245,22 @@ async function makeMove(move) {
 
         if (!data.success) {
             alert(data.error || "Illegal move");
-
             clearSelection();
             updateBoard();
-
             return;
         }
 
+        // Optimistically update own side; the server will broadcast to opponent
         currentFen = data.fen;
         gameStatus = data.game_status;
-
         isMyTurn = false;
 
         clearSelection();
         await updateCheckHighlight();
         updateBoard();
-        updateMoveList();
         updateStatus();
         updateActions();
-
-        if (gameStatus === "active") {
-            setTimeout(() => {
-                startPolling();
-            }, 300);
-        }
+        // Move list will arrive via game_update broadcast
 
     } catch (err) {
         console.error("Move failed", err);
@@ -330,7 +273,6 @@ async function makeMove(move) {
 
 function updateStatus() {
     const statusEl = document.getElementById("status");
-
     statusEl.className = "status";
 
     if (gameStatus === "finished") {
@@ -338,7 +280,7 @@ function updateStatus() {
         return;
     }
 
-    if (isMyTurn && gameStatus === "active"){
+    if (isMyTurn && gameStatus === "active") {
         statusEl.textContent = "Your move";
         statusEl.classList.add("your-turn");
     } else {
@@ -348,105 +290,51 @@ function updateStatus() {
 }
 
 /* =========================
-   Improved Move List
+   Move List
 ========================= */
+
+function renderMoveList(moves) {
+    const movesEl = document.getElementById("moves");
+    movesEl.innerHTML = "";
+
+    if (!moves.length) {
+        movesEl.innerHTML = `<div class="empty-moves">No moves yet</div>`;
+        return;
+    }
+
+    for (let i = 0; i < moves.length; i += 2) {
+        const row = document.createElement("div");
+        row.className = "move-row";
+
+        const moveNumber = document.createElement("span");
+        moveNumber.className = "move-number";
+        moveNumber.textContent = `${Math.floor(i / 2) + 1}.`;
+
+        const whiteMove = document.createElement("span");
+        whiteMove.className = "move white-move";
+        whiteMove.textContent = moves[i] || "";
+
+        const blackMove = document.createElement("span");
+        blackMove.className = "move black-move";
+        blackMove.textContent = moves[i + 1] || "";
+
+        row.appendChild(moveNumber);
+        row.appendChild(whiteMove);
+        row.appendChild(blackMove);
+        movesEl.appendChild(row);
+    }
+
+    movesEl.scrollTop = movesEl.scrollHeight;
+}
 
 async function updateMoveList() {
     try {
         const res = await fetch(`/moves/${gameId}`);
         const data = await res.json();
-
-        const movesEl = document.getElementById("moves");
-
-        movesEl.innerHTML = "";
-
-        const moves = data.moves;
-
-        if (!moves.length) {
-            movesEl.innerHTML = `
-                <div class="empty-moves">
-                    No moves yet
-                </div>
-            `;
-            return;
-        }
-
-        for (let i = 0; i < moves.length; i += 2) {
-            const row = document.createElement("div");
-
-            row.className = "move-row";
-
-            const moveNumber = document.createElement("span");
-            moveNumber.className = "move-number";
-            moveNumber.textContent = `${Math.floor(i / 2) + 1}.`;
-
-            const whiteMove = document.createElement("span");
-            whiteMove.className = "move white-move";
-            whiteMove.textContent = moves[i] || "";
-
-            const blackMove = document.createElement("span");
-            blackMove.className = "move black-move";
-            blackMove.textContent = moves[i + 1] || "";
-
-            row.appendChild(moveNumber);
-            row.appendChild(whiteMove);
-            row.appendChild(blackMove);
-
-            movesEl.appendChild(row);
-        }
-
-        movesEl.scrollTop = movesEl.scrollHeight;
-
+        renderMoveList(data.moves);
     } catch (err) {
         console.error("Failed to update move list", err);
     }
-}
-
-/* =========================
-   Polling
-========================= */
-
-function startPolling() {
-    if (pollInterval) {
-        clearInterval(pollInterval);
-    }
-
-    pollInterval = setInterval(async () => {
-        if (isMyTurn || gameStatus !== "active") {
-            return;
-        }
-
-        try {
-            const res = await fetch(`/game_state/${gameId}`);
-            const data = await res.json();
-
-            if (data.fen && data.fen !== currentFen) {
-                currentFen = data.fen;
-                isMyTurn = data.is_my_turn;
-                gameStatus = data.status;
-
-                currentResult = data.result;
-                currentDrawOfferedBy =
-                    data.draw_offered_by ?? null;
-                await updateCheckHighlight();
-                updateBoard();
-                updateMoveList();
-                updateStatus();
-                updateActions();
-            } else if (
-                data.draw_offered_by !== undefined &&
-                data.draw_offered_by !== currentDrawOfferedBy
-            ) {
-                currentDrawOfferedBy =
-                    data.draw_offered_by;
-
-                updateActions();
-            }
-
-        } catch (err) {
-            console.error("Polling failed", err);
-        }
-    }, 2500);
 }
 
 /* =========================
@@ -455,48 +343,32 @@ function startPolling() {
 
 function createButton(text, className = "btn") {
     const button = document.createElement("button");
-
     button.type = "submit";
     button.className = className;
     button.textContent = text;
-
     return button;
 }
 
 function updateActions() {
     const actionsEl = document.getElementById("actions");
-
     actionsEl.innerHTML = "";
 
-    // Finished game
     if (gameStatus === "finished") {
         const rematchBtn = document.createElement("a");
-
         rematchBtn.href = `/rematch/${gameId}`;
         rematchBtn.className = "btn";
         rematchBtn.textContent = "Rematch";
-
         rematchBtn.style.textAlign = "center";
-
         actionsEl.appendChild(rematchBtn);
 
         const resultDiv = document.createElement("div");
-
-        resultDiv.style.cssText = `
-            text-align: center;
-            font-size: 14px;
-            color: #aaa;
-            margin-top: 6px;
-        `;
+        resultDiv.style.cssText = `text-align: center; font-size: 14px; color: #aaa; margin-top: 6px;`;
 
         if (currentResult === "draw") {
-            resultDiv.textContent =
-                "Game ended in a draw";
+            resultDiv.textContent = "Game ended in a draw";
         } else if (
-            (currentResult === "white_wins" &&
-                myColor === "white") ||
-            (currentResult === "black_wins" &&
-                myColor === "black")
+            (currentResult === "white_wins" && myColor === "white") ||
+            (currentResult === "black_wins" && myColor === "black")
         ) {
             resultDiv.textContent = "🏆 You won!";
             resultDiv.style.color = "#5a9e6f";
@@ -505,142 +377,108 @@ function updateActions() {
         }
 
         actionsEl.appendChild(resultDiv);
-
         return;
     }
 
-    if (gameStatus !== "active") {
-        return;
-    }
+    if (gameStatus !== "active") return;
 
-    // Accept draw
-    if (
-        currentDrawOfferedBy &&
-        currentDrawOfferedBy !== myId
-    ) {
+    if (currentDrawOfferedBy && currentDrawOfferedBy !== myId) {
         const form = document.createElement("form");
-
         form.action = `/accept_draw/${gameId}`;
         form.method = "POST";
-
         const button = createButton("Accept Draw");
-
-        button.style.cssText = `
-            width: 100%;
-            background-color: #5a7a9e;
-        `;
-
+        button.style.cssText = `width: 100%; background-color: #5a7a9e;`;
         form.appendChild(button);
-
         actionsEl.appendChild(form);
     }
 
-    if (!isMyTurn) {
-        return;
-    }
+    if (!isMyTurn) return;
 
-    // Offer draw
     if (!currentDrawOfferedBy) {
         const form = document.createElement("form");
-
         form.action = `/offer_draw/${gameId}`;
         form.method = "POST";
-
-        const button = createButton(
-            "Offer Draw",
-            "btn btn-secondary"
-        );
-
+        const button = createButton("Offer Draw", "btn btn-secondary");
         button.style.width = "100%";
-
         form.appendChild(button);
-
         actionsEl.appendChild(form);
-
     } else if (currentDrawOfferedBy === myId) {
         const pending = document.createElement("div");
-
-        pending.style.cssText = `
-            text-align: center;
-            font-size: 13px;
-            color: #aaa;
-            padding: 8px;
-        `;
-
+        pending.style.cssText = `text-align: center; font-size: 13px; color: #aaa; padding: 8px;`;
         pending.textContent = "Draw offer pending...";
-
         actionsEl.appendChild(pending);
     }
 
-    // Resign
     const resignForm = document.createElement("form");
-
     resignForm.action = `/resign/${gameId}`;
     resignForm.method = "POST";
+    resignForm.onsubmit = () => confirm("Are you sure you want to resign?");
 
-    resignForm.onsubmit = () =>
-        confirm("Are you sure you want to resign?");
-
-    const resignBtn = createButton(
-        "Resign",
-        "btn btn-secondary"
-    );
-
-    resignBtn.style.cssText = `
-        width: 100%;
-        background-color: #6b2b2b;
-    `;
-
+    const resignBtn = createButton("Resign", "btn btn-secondary");
+    resignBtn.style.cssText = `width: 100%; background-color: #6b2b2b;`;
     resignForm.appendChild(resignBtn);
-
     actionsEl.appendChild(resignForm);
 }
 
-function renderCoordinates() {
-    const files =
-        myColor === "white"
-            ? ["a","b","c","d","e","f","g","h"]
-            : ["h","g","f","e","d","c","b","a"];
+/* =========================
+   Coordinates
+========================= */
 
-    const ranks =
-        myColor === "white"
-            ? ["8","7","6","5","4","3","2","1"]
-            : ["1","2","3","4","5","6","7","8"];
+function renderCoordinates() {
+    const files = myColor === "white"
+        ? ["a","b","c","d","e","f","g","h"]
+        : ["h","g","f","e","d","c","b","a"];
+    const ranks = myColor === "white"
+        ? ["8","7","6","5","4","3","2","1"]
+        : ["1","2","3","4","5","6","7","8"];
 
     const topFiles = document.getElementById("top-files");
     const bottomFiles = document.getElementById("bottom-files");
-
     const leftRanks = document.getElementById("left-ranks");
     const rightRanks = document.getElementById("right-ranks");
 
-    topFiles.innerHTML = "";
-    bottomFiles.innerHTML = "";
-
-    leftRanks.innerHTML = "";
-    rightRanks.innerHTML = "";
+    [topFiles, bottomFiles, leftRanks, rightRanks].forEach(el => el.innerHTML = "");
 
     files.forEach(file => {
-        const top = document.createElement("div");
-        top.textContent = file;
-
-        const bottom = document.createElement("div");
-        bottom.textContent = file;
-
+        const top = document.createElement("div"); top.textContent = file;
+        const bottom = document.createElement("div"); bottom.textContent = file;
         topFiles.appendChild(top);
         bottomFiles.appendChild(bottom);
     });
 
     ranks.forEach(rank => {
-        const left = document.createElement("div");
-        left.textContent = rank;
-
-        const right = document.createElement("div");
-        right.textContent = rank;
-
+        const left = document.createElement("div"); left.textContent = rank;
+        const right = document.createElement("div"); right.textContent = rank;
         leftRanks.appendChild(left);
         rightRanks.appendChild(right);
     });
 }
+
+/* =========================
+   Check Highlight
+========================= */
+
+async function updateCheckHighlight() {
+    try {
+        const res = await fetch(`/check_square/${gameId}`);
+        if (!res.ok) { checkedKingSquare = null; return; }
+
+        const data = await res.json();
+        if (!data.square) { checkedKingSquare = null; return; }
+
+        const parts = data.square.split(",");
+        if (parts.length !== 2) { checkedKingSquare = null; return; }
+
+        checkedKingSquare = { col: Number(parts[0]), row: Number(parts[1]) };
+    } catch (err) {
+        console.error("Check highlight failed", err);
+        checkedKingSquare = null;
+    }
+}
+
+/* =========================
+   Initial Sync
+========================= */
 
 async function syncGameState() {
     try {
@@ -650,51 +488,16 @@ async function syncGameState() {
         currentFen = data.fen;
         gameStatus = data.status;
         isMyTurn = data.is_my_turn;
-
         currentResult = data.result;
         currentDrawOfferedBy = data.draw_offered_by;
+
         await updateCheckHighlight();
         updateBoard();
         updateStatus();
         updateActions();
-        updateMoveList();
-
+        await updateMoveList();
     } catch (err) {
         console.error("Failed initial sync", err);
-    }
-}
-
-async function updateCheckHighlight() {
-    try {
-        const res = await fetch(`/check_square/${gameId}`);
-
-        if (!res.ok) {
-            checkedKingSquare = null;
-            return;
-        }
-
-        const data = await res.json();
-
-        if (!data.square) {
-            checkedKingSquare = null;
-            return;
-        }
-
-        const parts = data.square.split(",");
-
-        if (parts.length !== 2) {
-            checkedKingSquare = null;
-            return;
-        }
-
-        checkedKingSquare = {
-            col: Number(parts[0]),
-            row: Number(parts[1])
-        };
-
-    } catch (err) {
-        console.error("Check highlight failed", err);
-        checkedKingSquare = null;
     }
 }
 
@@ -705,7 +508,3 @@ async function updateCheckHighlight() {
 renderCoordinates();
 buildBoard();
 syncGameState();
-
-if (!isMyTurn && gameStatus === "active") {
-    startPolling();
-}
