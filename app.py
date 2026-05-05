@@ -331,7 +331,8 @@ def game_state(game_id):
         "fen": game.board_fen,
         "status": game.status,
         "is_my_turn": is_my_turn,
-        "result": game.result
+        "result": game.result,
+        "draw_offered_by": game.draw_offered_by
     }
 
 @app.route("/resign/<game_id>", methods=["POST"])

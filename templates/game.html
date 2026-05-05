@@ -37,7 +37,7 @@
         </div>
 
         <!-- Actions -->
-        <div id="actions" style="margin-top: 15px;"></div>
+        <div id="actions" style="margin-top: 15px; display: flex; flex-direction: column; gap: 10px;"></div>
     </div>
 </div>
 
@@ -199,11 +199,14 @@
 
         if (data.success) {
             currentFen = data.fen;
+            gameStatus = data.game_status;
             selectedSquare = null;
             legalMoves = [];
+            isMyTurn = false;
             updateBoard();
             updateMoveList();
             updateStatus();
+            updateActions();
 
             // Slight delay for visual satisfaction
             setTimeout(() => {
@@ -257,11 +260,105 @@
                 currentFen = data.fen;
                 isMyTurn = data.is_my_turn;
                 gameStatus = data.status;
+                currentResult = data.result;
+                currentDrawOfferedBy = data.draw_offered_by ?? null;
                 updateBoard();
                 updateMoveList();
                 updateStatus();
+                updateActions();
+            } else if (data.draw_offered_by !== undefined && data.draw_offered_by !== currentDrawOfferedBy) {
+                currentDrawOfferedBy = data.draw_offered_by;
+                updateActions();
             }
         }, 2500);
+    }
+
+    const drawOfferedBy = {{ game.draw_offered_by | tojson }};
+    let currentDrawOfferedBy = drawOfferedBy;
+    const myId = {{ current_user.id }};
+    const gameResult = {{ game.result | tojson }};
+    let currentResult = gameResult;
+
+    function updateActions() {
+        const actionsEl = document.getElementById("actions");
+        actionsEl.innerHTML = "";
+
+        if (gameStatus === "finished") {
+            // Rematch button
+            const rematchBtn = document.createElement("a");
+            rematchBtn.href = `/rematch/${gameId}`;
+            rematchBtn.className = "btn";
+            rematchBtn.style.textAlign = "center";
+            rematchBtn.textContent = "Rematch";
+            actionsEl.appendChild(rematchBtn);
+
+            // Result label
+            const resultDiv = document.createElement("div");
+            resultDiv.style.cssText = "text-align:center; font-size:14px; color:#aaa; margin-top:4px;";
+            if (currentResult === "draw") {
+                resultDiv.textContent = "Game ended in a draw";
+            } else if (
+                (currentResult === "white_wins" && myColor === "white") ||
+                (currentResult === "black_wins" && myColor === "black")
+            ) {
+                resultDiv.textContent = "🏆 You won!";
+                resultDiv.style.color = "#5a9e6f";
+            } else {
+                resultDiv.textContent = "You lost";
+            }
+            actionsEl.appendChild(resultDiv);
+            return;
+        }
+
+        if (gameStatus !== "active") return;
+
+        // Draw offered by opponent — show Accept button
+        if (currentDrawOfferedBy && currentDrawOfferedBy !== myId) {
+            const acceptForm = document.createElement("form");
+            acceptForm.action = `/accept_draw/${gameId}`;
+            acceptForm.method = "POST";
+            const acceptBtn = document.createElement("button");
+            acceptBtn.type = "submit";
+            acceptBtn.className = "btn";
+            acceptBtn.style.cssText = "width:100%; background-color:#5a7a9e;";
+            acceptBtn.textContent = "Accept Draw";
+            acceptForm.appendChild(acceptBtn);
+            actionsEl.appendChild(acceptForm);
+        }
+
+        if (isMyTurn) {
+            // Offer Draw
+            if (!currentDrawOfferedBy) {
+                const drawForm = document.createElement("form");
+                drawForm.action = `/offer_draw/${gameId}`;
+                drawForm.method = "POST";
+                const drawBtn = document.createElement("button");
+                drawBtn.type = "submit";
+                drawBtn.className = "btn btn-secondary";
+                drawBtn.style.width = "100%";
+                drawBtn.textContent = "Offer Draw";
+                drawForm.appendChild(drawBtn);
+                actionsEl.appendChild(drawForm);
+            } else if (currentDrawOfferedBy === myId) {
+                const pendingDiv = document.createElement("div");
+                pendingDiv.style.cssText = "text-align:center; font-size:13px; color:#aaa; padding:8px;";
+                pendingDiv.textContent = "Draw offer pending...";
+                actionsEl.appendChild(pendingDiv);
+            }
+
+            // Resign
+            const resignForm = document.createElement("form");
+            resignForm.action = `/resign/${gameId}`;
+            resignForm.method = "POST";
+            resignForm.onsubmit = () => confirm("Are you sure you want to resign?");
+            const resignBtn = document.createElement("button");
+            resignBtn.type = "submit";
+            resignBtn.className = "btn btn-secondary";
+            resignBtn.style.cssText = "width:100%; background-color:#6b2b2b;";
+            resignBtn.textContent = "Resign";
+            resignForm.appendChild(resignBtn);
+            actionsEl.appendChild(resignForm);
+        }
     }
 
     // Initialize
@@ -269,6 +366,7 @@
     updateBoard();
     updateStatus();
     updateMoveList();
+    updateActions();
     if (!isMyTurn && gameStatus === "active") startPolling();
 </script>
 {% endblock %}
