@@ -188,7 +188,7 @@ async function getLegalMoves(col, row) {
                 row: r
             };
         });
-        await updateCheckHighlight();
+
         updateBoard();
     } catch (err) {
         console.error("Failed to fetch legal moves", err);
@@ -227,7 +227,6 @@ async function onSquareClick(event) {
         selectedSquare.row === row
     ) {
         clearSelection();
-        await updateCheckHighlight();
         updateBoard();
         return;
     }
@@ -289,7 +288,6 @@ async function makeMove(move) {
             alert(data.error || "Illegal move");
 
             clearSelection();
-            await updateCheckHighlight();
             updateBoard();
 
             return;
@@ -647,7 +645,6 @@ async function syncGameState() {
 
         currentResult = data.result;
         currentDrawOfferedBy = data.draw_offered_by;
-
         await updateCheckHighlight();
         updateBoard();
         updateStatus();
