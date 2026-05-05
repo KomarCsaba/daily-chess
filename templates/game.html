@@ -14,7 +14,23 @@
             {{ game.get_opponent(current_user.id).username if game.get_opponent(current_user.id) else "Waiting for opponent..." }}
         </div>
 
-        <div id="board" class="board"></div>
+        <div class="board-wrapper">
+
+            <div class="top-coordinates coordinates horizontal" id="top-files"></div>
+
+            <div class="board-row">
+
+                <div class="coordinates vertical" id="left-ranks"></div>
+
+                <div id="board" class="board"></div>
+
+                <div class="coordinates vertical" id="right-ranks"></div>
+
+            </div>
+
+            <div class="bottom-coordinates coordinates horizontal" id="bottom-files"></div>
+
+        </div>
 
         <div class="player-label current-player">
             {{ current_user.username }} (you)
@@ -50,7 +66,7 @@
         gameId: "{{ game.id }}",
         myColor: "{{ 'white' if game.white_id == current_user.id else 'black' }}",
         currentFen: "{{ game.board_fen }}",
-        isMyTurn: "{{ 'true' if game.is_players_turn(current_user.id) else 'false' }}",
+        isMyTurn: "{{ game.is_players_turn(current_user.id) | tojson }}",
         gameStatus: "{{ game.status }}",
         drawOfferedBy: "{{ game.draw_offered_by | tojson }}",
         myId: "{{ current_user.id }}",

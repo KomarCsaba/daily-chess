@@ -32,7 +32,7 @@ let selectedSquare = null;
 let legalMoves = [];
 let pollInterval = null;
 
-let currentDrawOfferedBy = drawOfferedBy;
+let currentDrawOfferedBy = drawOfferedBy ?? null;
 let currentResult = gameResult;
 
 /* =========================
@@ -582,10 +582,57 @@ function updateActions() {
     actionsEl.appendChild(resignForm);
 }
 
+function renderCoordinates() {
+    const files =
+        myColor === "white"
+            ? ["a","b","c","d","e","f","g","h"]
+            : ["h","g","f","e","d","c","b","a"];
+
+    const ranks =
+        myColor === "white"
+            ? ["8","7","6","5","4","3","2","1"]
+            : ["1","2","3","4","5","6","7","8"];
+
+    const topFiles = document.getElementById("top-files");
+    const bottomFiles = document.getElementById("bottom-files");
+
+    const leftRanks = document.getElementById("left-ranks");
+    const rightRanks = document.getElementById("right-ranks");
+
+    topFiles.innerHTML = "";
+    bottomFiles.innerHTML = "";
+
+    leftRanks.innerHTML = "";
+    rightRanks.innerHTML = "";
+
+    files.forEach(file => {
+        const top = document.createElement("div");
+        top.textContent = file;
+
+        const bottom = document.createElement("div");
+        bottom.textContent = file;
+
+        topFiles.appendChild(top);
+        bottomFiles.appendChild(bottom);
+    });
+
+    ranks.forEach(rank => {
+        const left = document.createElement("div");
+        left.textContent = rank;
+
+        const right = document.createElement("div");
+        right.textContent = rank;
+
+        leftRanks.appendChild(left);
+        rightRanks.appendChild(right);
+    });
+}
+
 /* =========================
    Initialize
 ========================= */
 
+renderCoordinates();
 buildBoard();
 updateBoard();
 updateStatus();
