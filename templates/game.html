@@ -50,11 +50,11 @@
         gameId: "{{ game.id }}",
         myColor: "{{ 'white' if game.white_id == current_user.id else 'black' }}",
         currentFen: "{{ game.board_fen }}",
-        isMyTurn: {{ 'true' if game.is_players_turn(current_user.id) else 'false' }},
+        isMyTurn: "{{ 'true' if game.is_players_turn(current_user.id) else 'false' }}",
         gameStatus: "{{ game.status }}",
-        drawOfferedBy: {{ game.draw_offered_by | tojson }},
-        myId: {{ current_user.id }},
-        gameResult: {{ game.result | tojson }}
+        drawOfferedBy: "{{ game.draw_offered_by | tojson }}",
+        myId: "{{ current_user.id }}",
+        gameResult: "{{ game.result | tojson }}"
     };
 </script>
 
