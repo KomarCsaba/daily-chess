@@ -119,10 +119,6 @@ function updateBoard() {
     const pieces = fenToBoard(currentFen);
     const squares = document.querySelectorAll(".square");
 
-    if (checkedKingSquare && checkedKingSquare.col === col && checkedKingSquare.row === row) {
-        square.classList.add("check");
-    }
-
     squares.forEach(square => {
         const col = parseInt(square.dataset.col);
         const row = parseInt(square.dataset.row);
@@ -136,6 +132,7 @@ function updateBoard() {
 
         square.textContent = "";
 
+        // Render piece
         if (piece) {
             square.textContent = PIECES[piece];
 
@@ -146,6 +143,7 @@ function updateBoard() {
             );
         }
 
+        // Selected square
         if (
             selectedSquare &&
             selectedSquare.col === col &&
@@ -154,6 +152,7 @@ function updateBoard() {
             square.classList.add("selected");
         }
 
+        // Legal move indicators
         const isLegalMove = legalMoves.some(
             move => move.col === col && move.row === row
         );
@@ -164,6 +163,15 @@ function updateBoard() {
             if (piece) {
                 square.classList.add("has-piece");
             }
+        }
+
+        // Check highlight
+        if (
+            checkedKingSquare !== null &&
+            checkedKingSquare.col === col &&
+            checkedKingSquare.row === row
+        ) {
+            square.classList.add("check");
         }
     });
 }
@@ -659,6 +667,12 @@ async function syncGameState() {
 async function updateCheckHighlight() {
     try {
         const res = await fetch(`/check_square/${gameId}`);
+
+        if (!res.ok) {
+            checkedKingSquare = null;
+            return;
+        }
+
         const data = await res.json();
 
         if (!data.square) {
@@ -666,14 +680,21 @@ async function updateCheckHighlight() {
             return;
         }
 
-        const [col, row] = data.square
-            .split(",")
-            .map(Number);
+        const parts = data.square.split(",");
 
-        checkedKingSquare = { col, row };
+        if (parts.length !== 2) {
+            checkedKingSquare = null;
+            return;
+        }
+
+        checkedKingSquare = {
+            col: Number(parts[0]),
+            row: Number(parts[1])
+        };
 
     } catch (err) {
         console.error("Check highlight failed", err);
+        checkedKingSquare = null;
     }
 }
 

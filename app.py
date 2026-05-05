@@ -402,19 +402,27 @@ def check_square(game_id):
     if not game:
         return {"square": None}
 
-    board = chess.Board(game.board_fen)
+    try:
+        board = chess.Board(game.board_fen)
 
-    if not board.is_check():
+        if not board.is_check():
+            return {"square": None}
+
+        king_square = board.king(board.turn)
+
+        if king_square is None:
+            return {"square": None}
+
+        col = chess.square_file(king_square)
+        row = 7 - chess.square_rank(king_square)
+
+        return {
+            "square": f"{col},{row}"
+        }
+
+    except Exception as e:
+        print("Check square error:", e)
         return {"square": None}
-
-    king_square = board.king(board.turn)
-
-    col = chess.square_file(king_square)
-    row = 7 - chess.square_rank(king_square)
-
-    return {
-        "square": f"{col},{row}"
-    }
 
 # create tables on startup
 with app.app_context():
