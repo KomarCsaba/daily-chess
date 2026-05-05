@@ -207,6 +207,10 @@
     align-items: center;
 }
 
+.check {
+    background-color: #c94c4c !important;
+}
+
 @media (max-width: 900px) {
     .game-layout {
         flex-direction: column;

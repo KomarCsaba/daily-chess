@@ -68,7 +68,7 @@
         currentFen: "{{ game.board_fen }}",
         isMyTurn: "{{ game.is_players_turn(current_user.id) | tojson }}",
         gameStatus: "{{ game.status }}",
-        drawOfferedBy: "{{ game.draw_offered_by | tojson }}",
+        drawOfferedBy: "{{ game.draw_offered_by if game.draw_offered_by else 'null' }}",
         myId: "{{ current_user.id }}",
         gameResult: "{{ game.result | tojson }}"
     };

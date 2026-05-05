@@ -394,6 +394,28 @@ def join_by_code():
     game_id = code.split("/join/")[-1] if "/join/" in code else code
     return redirect(url_for("join_game", game_id=game_id))
 
+@app.route("/check_square/<game_id>")
+@login_required
+def check_square(game_id):
+    game = Game.query.get(game_id)
+
+    if not game:
+        return {"square": None}
+
+    board = chess.Board(game.board_fen)
+
+    if not board.is_check():
+        return {"square": None}
+
+    king_square = board.king(board.turn)
+
+    col = chess.square_file(king_square)
+    row = 7 - chess.square_rank(king_square)
+
+    return {
+        "square": f"{col},{row}"
+    }
+
 # create tables on startup
 with app.app_context():
     db.create_all()

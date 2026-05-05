@@ -32,8 +32,10 @@ let selectedSquare = null;
 let legalMoves = [];
 let pollInterval = null;
 
-let currentDrawOfferedBy = drawOfferedBy ?? null;
+let currentDrawOfferedBy = drawOfferedBy;
 let currentResult = gameResult;
+
+let checkedKingSquare = null;
 
 /* =========================
    Utilities
@@ -117,6 +119,10 @@ function updateBoard() {
     const pieces = fenToBoard(currentFen);
     const squares = document.querySelectorAll(".square");
 
+    if (checkedKingSquare && checkedKingSquare.col === col && checkedKingSquare.row === row) {
+        square.classList.add("check");
+    }
+
     squares.forEach(square => {
         const col = parseInt(square.dataset.col);
         const row = parseInt(square.dataset.row);
@@ -182,7 +188,7 @@ async function getLegalMoves(col, row) {
                 row: r
             };
         });
-
+        await updateCheckHighlight();
         updateBoard();
     } catch (err) {
         console.error("Failed to fetch legal moves", err);
@@ -221,6 +227,7 @@ async function onSquareClick(event) {
         selectedSquare.row === row
     ) {
         clearSelection();
+        await updateCheckHighlight();
         updateBoard();
         return;
     }
@@ -282,6 +289,7 @@ async function makeMove(move) {
             alert(data.error || "Illegal move");
 
             clearSelection();
+            await updateCheckHighlight();
             updateBoard();
 
             return;
@@ -293,7 +301,7 @@ async function makeMove(move) {
         isMyTurn = false;
 
         clearSelection();
-
+        await updateCheckHighlight();
         updateBoard();
         updateMoveList();
         updateStatus();
@@ -324,7 +332,7 @@ function updateStatus() {
         return;
     }
 
-    if (isMyTurn) {
+    if (isMyTurn && gameStatus === "active"){
         statusEl.textContent = "Your move";
         statusEl.classList.add("your-turn");
     } else {
@@ -414,7 +422,7 @@ function startPolling() {
                 currentResult = data.result;
                 currentDrawOfferedBy =
                     data.draw_offered_by ?? null;
-
+                await updateCheckHighlight();
                 updateBoard();
                 updateMoveList();
                 updateStatus();
@@ -628,16 +636,57 @@ function renderCoordinates() {
     });
 }
 
+async function syncGameState() {
+    try {
+        const res = await fetch(`/game_state/${gameId}`);
+        const data = await res.json();
+
+        currentFen = data.fen;
+        gameStatus = data.status;
+        isMyTurn = data.is_my_turn;
+
+        currentResult = data.result;
+        currentDrawOfferedBy = data.draw_offered_by;
+
+        await updateCheckHighlight();
+        updateBoard();
+        updateStatus();
+        updateActions();
+        updateMoveList();
+
+    } catch (err) {
+        console.error("Failed initial sync", err);
+    }
+}
+
+async function updateCheckHighlight() {
+    try {
+        const res = await fetch(`/check_square/${gameId}`);
+        const data = await res.json();
+
+        if (!data.square) {
+            checkedKingSquare = null;
+            return;
+        }
+
+        const [col, row] = data.square
+            .split(",")
+            .map(Number);
+
+        checkedKingSquare = { col, row };
+
+    } catch (err) {
+        console.error("Check highlight failed", err);
+    }
+}
+
 /* =========================
    Initialize
 ========================= */
 
 renderCoordinates();
 buildBoard();
-updateBoard();
-updateStatus();
-updateMoveList();
-updateActions();
+syncGameState();
 
 if (!isMyTurn && gameStatus === "active") {
     startPolling();
