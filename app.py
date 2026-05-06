@@ -600,7 +600,8 @@ def make_move(game_id):
         is_capture = board.is_capture(move)
         is_castling = board.is_castling(move)
         is_promotion = move.promotion is not None
-        is_pawn_move = board.piece_at(move.from_square).piece_type == chess.PAWN
+        piece = board.piece_at(move.from_square)
+        is_pawn_move = piece is not None and piece.piece_type == chess.PAWN
         
         # Update halfmove clock for fifty-move rule
         if is_capture or is_pawn_move:

@@ -77,7 +77,7 @@ class Game(db.Model):
         """Add current position to history"""
         history = self.get_position_history()
         history.append(fen)
-        self.position_history = "|".join(history)
+        self.position_history = "|".join(history) if history else ""
     
     def is_threefold_repetition(self):
         """Check if current position has occurred three times"""
