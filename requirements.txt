@@ -9,3 +9,4 @@ werkzeug
 chess
 gunicorn
 requests
+eventlet

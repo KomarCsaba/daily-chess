@@ -864,4 +864,6 @@ def check_square(game_id):
 
 if __name__ == "__main__":
     # Use socketio.run instead of app.run
-    socketio.run(app, debug=True)
+    # Railway expects port 8080, use PORT env var if available, otherwise default to 5000
+    port = int(os.environ.get("PORT", 5000))
+    socketio.run(app, debug=True, port=port)
