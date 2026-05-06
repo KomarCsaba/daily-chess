@@ -1,15 +1,105 @@
 {% extends "base.html" %}
 
 {% block content %}
+<style>
+    .dashboard-section {
+        background-color: #2a2a2a;
+        padding: 20px;
+        border-radius: 10px;
+        margin-bottom: 30px;
+    }
+
+    .new-game-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+        gap: 10px;
+        align-items: stretch;
+    }
+
+    .time-control-option {
+        display: block;
+        background-color: #333;
+        border-radius: 8px;
+        padding: 12px;
+        cursor: pointer;
+    }
+
+    .join-form {
+        display: flex;
+        gap: 10px;
+    }
+
+    .join-input {
+        flex: 1;
+        padding: 10px;
+        background-color: #3a3a3a;
+        border: none;
+        border-radius: 6px;
+        color: white;
+        font-size: 14px;
+    }
+
+    .game-list {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        margin-bottom: 30px;
+    }
+
+    .game-card {
+        background-color: #2a2a2a;
+        padding: 20px;
+        border-radius: 10px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 16px;
+    }
+
+    .game-meta {
+        color: #aaa;
+        font-size: 13px;
+    }
+
+    .waiting-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+    }
+
+    .code-pill {
+        background: #3a3a3a;
+        border-radius: 999px;
+        padding: 8px 12px;
+        font-family: monospace;
+        font-size: 13px;
+        color: #f1f1f1;
+    }
+
+    @media (max-width: 720px) {
+        .join-form,
+        .game-card {
+            flex-direction: column;
+            align-items: stretch;
+        }
+
+        .waiting-actions {
+            justify-content: flex-start;
+        }
+    }
+</style>
+
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px;">
     <h1>Your Games</h1>
 </div>
 
-<div style="background-color: #2a2a2a; padding: 20px; border-radius: 10px; margin-bottom: 30px;">
+<div class="dashboard-section">
     <h3 style="margin-bottom: 15px;">New Game</h3>
-    <form action="/new_game" method="POST" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; align-items: stretch;">
+    <form action="/new_game" method="POST" class="new-game-grid">
         {% for key, control in time_controls.items() %}
-        <label style="display: block; background-color: #333; border-radius: 8px; padding: 12px; cursor: pointer;">
+        <label class="time-control-option">
             <input type="radio" name="time_control" value="{{ key }}" {% if key == "daily" %}checked{% endif %} style="margin-right: 6px;">
             <strong>{{ control.label }}</strong>
             <div style="color: #aaa; font-size: 12px; margin-top: 4px;">{{ control.description }}</div>
@@ -19,31 +109,28 @@
     </form>
 </div>
 
-<!-- join a game by code -->
-<div style="background-color: #2a2a2a; padding: 20px; border-radius: 10px; margin-bottom: 30px;">
+<div class="dashboard-section">
     <h3 style="margin-bottom: 15px;">Join a Game</h3>
-    <form action="/join_by_code" method="POST" style="display: flex; gap: 10px;">
-        <input type="text" name="code" placeholder="Paste game link or ID..."
-            style="flex: 1; padding: 10px; background-color: #3a3a3a; border: none; border-radius: 6px; color: white; font-size: 14px;">
+    <form action="/join_by_code" method="POST" class="join-form">
+        <input type="text" name="code" placeholder="Enter code or paste invite link..." class="join-input">
         <button type="submit" class="btn">Join</button>
     </form>
 </div>
 
-<!-- active games -->
 {% set active_games = games | selectattr("status", "equalto", "active") | list %}
 {% set waiting_games = games | selectattr("status", "equalto", "waiting") | list %}
 {% set finished_games = games | selectattr("status", "equalto", "finished") | list %}
 
 {% if active_games %}
 <h2 style="margin-bottom: 15px;">Active Games</h2>
-<div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 30px;">
+<div class="game-list">
     {% for game in active_games %}
-    <div style="background-color: #2a2a2a; padding: 20px; border-radius: 10px; display: flex; justify-content: space-between; align-items: center;">
+    <div class="game-card">
         <div>
             <div style="font-size: 16px; margin-bottom: 5px;">
                 vs <strong>{{ game.get_opponent(current_user.id).username if game.get_opponent(current_user.id) else "Unknown" }}</strong>
             </div>
-            <div style="color: #aaa; font-size: 13px;">
+            <div class="game-meta">
                 You are playing as <strong>{{ "white" if game.white_id == current_user.id else "black" }}</strong>
                 · {{ (time_controls.get(game.time_control or "daily") or time_controls["daily"]).label }}
                 · Last move: {{ game.last_move_at.strftime("%b %d, %Y") }}
@@ -64,19 +151,27 @@
 
 {% if waiting_games %}
 <h2 style="margin-bottom: 15px;">Waiting for Opponent</h2>
-<div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 30px;">
+<div class="game-list">
     {% for game in waiting_games %}
-    <div style="background-color: #2a2a2a; padding: 20px; border-radius: 10px; display: flex; justify-content: space-between; align-items: center;">
+    <div class="game-card">
         <div>
-            <div style="color: #aaa; font-size: 13px;">
+            <div style="font-size: 16px; margin-bottom: 6px;">
+                Waiting for opponent
+            </div>
+            <div class="game-meta">
                 Created {{ game.created_at.strftime("%b %d, %Y") }}
                 · {{ (time_controls.get(game.time_control or "daily") or time_controls["daily"]).label }}
             </div>
         </div>
-        <div style="display: flex; align-items: center; gap: 15px;">
-            <input type="text" value="{{ request.host_url }}join/{{ game.id }}"
-                style="background-color: #3a3a3a; border: none; border-radius: 6px; color: #aaa; padding: 8px; font-size: 12px; width: 280px;"
-                readonly onclick="this.select()">
+        <div class="waiting-actions">
+            <span class="code-pill">{{ game.join_code }}</span>
+            <button
+                type="button"
+                class="btn btn-secondary copy-invite-btn"
+                data-copy="{{ request.host_url }}join/{{ game.join_code }}"
+            >
+                Copy Invite
+            </button>
             <a href="/game/{{ game.id }}" class="btn btn-secondary">View</a>
         </div>
     </div>
@@ -86,14 +181,14 @@
 
 {% if finished_games %}
 <h2 style="margin-bottom: 15px;">Finished Games</h2>
-<div style="display: flex; flex-direction: column; gap: 10px;">
+<div class="game-list">
     {% for game in finished_games %}
-    <div style="background-color: #2a2a2a; padding: 20px; border-radius: 10px; display: flex; justify-content: space-between; align-items: center;">
+    <div class="game-card">
         <div>
             <div style="font-size: 16px; margin-bottom: 5px;">
                 vs <strong>{{ game.get_opponent(current_user.id).username if game.get_opponent(current_user.id) else "Unknown" }}</strong>
             </div>
-            <div style="color: #aaa; font-size: 13px;">
+            <div class="game-meta">
                 {% if game.result == "draw" %}
                     Draw
                 {% elif (game.result == "white_wins" and game.white_id == current_user.id) or (game.result == "black_wins" and game.black_id == current_user.id) %}
@@ -116,4 +211,21 @@
 </div>
 {% endif %}
 
+<script>
+    document.querySelectorAll(".copy-invite-btn").forEach(button => {
+        button.addEventListener("click", async () => {
+            const originalText = button.textContent;
+            try {
+                await navigator.clipboard.writeText(button.dataset.copy);
+                button.textContent = "Copied";
+            } catch (error) {
+                button.textContent = "Copy failed";
+            }
+
+            setTimeout(() => {
+                button.textContent = originalText;
+            }, 1500);
+        });
+    });
+</script>
 {% endblock %}

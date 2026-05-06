@@ -37,6 +37,7 @@ class Game(db.Model):
 
     # NEW
     draw_offered_by = db.Column(db.Integer, nullable=True)
+    join_code = db.Column(db.String(8), unique=True, nullable=True)
     time_control = db.Column(db.String(20), default="daily")
     time_control_mode = db.Column(db.String(20), default="per_move")
     turn_time_seconds = db.Column(db.Integer, default=86400)

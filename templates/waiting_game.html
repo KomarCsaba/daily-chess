@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+    .waiting-room {
+        background: linear-gradient(180deg, #2c2c2c 0%, #232323 100%);
+        border-radius: 14px;
+        padding: 32px;
+        display: grid;
+        gap: 24px;
+    }
+
+    .waiting-header {
+        display: grid;
+        gap: 8px;
+    }
+
+    .waiting-kicker {
+        color: #8fbf9d;
+        font-size: 13px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+    }
+
+    .waiting-title {
+        font-size: 32px;
+        line-height: 1.1;
+    }
+
+    .waiting-copy {
+        color: #b8b8b8;
+        max-width: 48ch;
+    }
+
+    .invite-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+    }
+
+    .invite-card {
+        background: rgba(255, 255, 255, 0.04);
+        border-radius: 10px;
+        padding: 18px;
+    }
+
+    .invite-label {
+        color: #9d9d9d;
+        font-size: 12px;
+        margin-bottom: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+    }
+
+    .invite-code {
+        font-family: monospace;
+        font-size: 28px;
+        margin-bottom: 12px;
+    }
+
+    .invite-link {
+        background: #343434;
+        border-radius: 8px;
+        padding: 12px;
+        color: #d8d8d8;
+        font-size: 13px;
+        word-break: break-all;
+        margin-bottom: 12px;
+    }
+
+    .waiting-actions {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+    }
+
+    .waiting-meta {
+        color: #b8b8b8;
+        font-size: 14px;
+        display: flex;
+        gap: 18px;
+        flex-wrap: wrap;
+    }
+
+    @media (max-width: 720px) {
+        .waiting-room {
+            padding: 24px;
+        }
+
+        .invite-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .waiting-title {
+            font-size: 26px;
+        }
+    }
+</style>
+
+<div class="waiting-room">
+    <div class="waiting-header">
+        <div class="waiting-kicker">Waiting Room</div>
+        <h1 class="waiting-title">Invite your opponent</h1>
+        <p class="waiting-copy">Share the invite once, then stay here. The board will open automatically when they join.</p>
+    </div>
+
+    <div class="waiting-meta">
+        <span>{{ initial_state.time_control_label }}</span>
+        <span>{{ initial_state.time_control_description }}</span>
+    </div>
+
+    <div class="invite-grid">
+        <div class="invite-card">
+            <div class="invite-label">Game Code</div>
+            <div class="invite-code">{{ game.join_code }}</div>
+            <button type="button" class="btn copy-btn" data-copy="{{ game.join_code }}">Copy code</button>
+        </div>
+
+        <div class="invite-card">
+            <div class="invite-label">Invite Link</div>
+            <div class="invite-link">{{ initial_state.invite_url }}</div>
+            <button type="button" class="btn copy-btn" data-copy="{{ initial_state.invite_url }}">Copy invite</button>
+        </div>
+    </div>
+
+    <div class="waiting-actions">
+        <a href="/dashboard" class="btn btn-secondary">Back to dashboard</a>
+        <a href="/game/{{ game.id }}" class="btn btn-secondary">Refresh</a>
+    </div>
+</div>
+
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<script>
+    const socket = io();
+    const gameId = {{ game.id | tojson }};
+
+    socket.on("connect", () => {
+        socket.emit("join_game", { game_id: gameId });
+    });
+
+    socket.on("game_update", (data) => {
+        if (data.status === "active") {
+            window.location.href = `/game/${gameId}`;
+        }
+    });
+
+    document.querySelectorAll(".copy-btn").forEach(button => {
+        button.addEventListener("click", async () => {
+            const originalText = button.textContent;
+            try {
+                await navigator.clipboard.writeText(button.dataset.copy);
+                button.textContent = "Copied";
+            } catch (error) {
+                button.textContent = "Copy failed";
+            }
+
+            setTimeout(() => {
+                button.textContent = originalText;
+            }, 1500);
+        });
+    });
+</script>
+{% endblock %}

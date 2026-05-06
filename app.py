@@ -8,6 +8,8 @@ from sqlalchemy import inspect, text
 import chess
 import uuid
 import os
+import random
+import string
 import threading
 from datetime import datetime, timedelta
 import logging
@@ -131,6 +133,18 @@ def get_time_control(game):
     return TIME_CONTROLS.get(game.time_control or "daily", TIME_CONTROLS["daily"])
 
 
+def generate_join_code(length=6):
+    alphabet = string.ascii_uppercase + string.digits
+    while True:
+        code = "".join(random.choice(alphabet) for _ in range(length))
+        if not Game.query.filter_by(join_code=code).first():
+            return code
+
+
+def get_game_invite_url(game):
+    return f"{app.config['BASE_URL']}/join/{game.join_code or game.id}"
+
+
 def get_time_control_mode(game):
     return game.time_control_mode or get_time_control(game)["mode"]
 
@@ -231,6 +245,8 @@ def serialize_game_state(game, user_id=None):
         "time_control_mode": get_time_control_mode(game),
         "white_time_remaining": clocks["white"],
         "black_time_remaining": clocks["black"],
+        "join_code": game.join_code,
+        "invite_url": get_game_invite_url(game),
     }
 
     if user_id is not None:
@@ -248,6 +264,8 @@ def ensure_game_timer_columns():
     inspector = inspect(db.engine)
     existing_columns = {column["name"] for column in inspector.get_columns("game")}
     columns = {
+        "draw_offered_by": "INTEGER",
+        "join_code": "VARCHAR(8)",
         "time_control": "VARCHAR(20) DEFAULT 'daily'",
         "time_control_mode": "VARCHAR(20) DEFAULT 'per_move'",
         "turn_time_seconds": "INTEGER DEFAULT 86400",
@@ -258,6 +276,15 @@ def ensure_game_timer_columns():
     for name, definition in columns.items():
         if name not in existing_columns:
             db.session.execute(text(f"ALTER TABLE game ADD COLUMN {name} {definition}"))
+
+    rows = db.session.execute(text("SELECT id, join_code FROM game")).mappings().all()
+    for row in rows:
+        if row["join_code"]:
+            continue
+        db.session.execute(
+            text("UPDATE game SET join_code = :join_code WHERE id = :game_id"),
+            {"join_code": generate_join_code(), "game_id": row["id"]},
+        )
 
     db.session.commit()
 
@@ -362,6 +389,7 @@ def new_game():
         white_id=current_user.id,
         board_fen=chess.Board().fen(),
         status="waiting",
+        join_code=generate_join_code(),
         time_control=selected_control,
         time_control_mode=time_control["mode"],
         turn_time_seconds=time_control["seconds"],
@@ -373,10 +401,12 @@ def new_game():
     return redirect(url_for("game", game_id=game.id))
 
 
-@app.route("/join/<game_id>")
+@app.route("/join/<join_token>")
 @login_required
-def join_game(game_id):
-    game = Game.query.get(game_id)
+def join_game(join_token):
+    game = Game.query.filter_by(join_code=join_token.upper()).first()
+    if not game:
+        game = Game.query.get(join_token)
 
     if not game:
         flash("Game not found")
@@ -417,7 +447,10 @@ def game(game_id):
         return redirect(url_for("dashboard"))
     if apply_timeout_if_needed(game):
         broadcast_game_state(game)
-    return render_template("game.html", game=game, initial_state=serialize_game_state(game, current_user.id))
+    initial_state = serialize_game_state(game, current_user.id)
+    if game.status == "waiting" and game.white_id == current_user.id:
+        return render_template("waiting_game.html", game=game, initial_state=initial_state)
+    return render_template("game.html", game=game, initial_state=initial_state)
 
 
 @app.route("/moves/<game_id>")
@@ -540,6 +573,7 @@ def rematch(game_id):
         board_fen=chess.Board().fen(),
         status="waiting",
         turn="white",
+        join_code=generate_join_code(),
         time_control=old_game.time_control or "daily",
         time_control_mode=rematch_mode,
         turn_time_seconds=rematch_seconds,
@@ -670,8 +704,8 @@ def accept_draw(game_id):
 @login_required
 def join_by_code():
     code = request.form.get("code", "").strip()
-    game_id = code.split("/join/")[-1] if "/join/" in code else code
-    return redirect(url_for("join_game", game_id=game_id))
+    join_token = code.split("/join/")[-1] if "/join/" in code else code
+    return redirect(url_for("join_game", join_token=join_token))
 
 
 @app.route("/check_square/<game_id>")

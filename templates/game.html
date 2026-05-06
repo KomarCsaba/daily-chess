@@ -43,14 +43,21 @@
     <div class="sidebar">
 
         <div class="panel">
-            <div class="panel-title">Invite Link</div>
-
-            <input
-                type="text"
-                readonly
-                value="{{ request.host_url }}join/{{ game.id }}"
-                class="invite-input"
-            >
+            <div class="panel-title">Game</div>
+            <div style="display: grid; gap: 10px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px;">
+                    <span style="color: #aaa; font-size: 13px;">Code</span>
+                    <span style="font-family: monospace; font-size: 14px;">{{ game.join_code }}</span>
+                </div>
+                <button
+                    type="button"
+                    id="copy-invite-btn"
+                    class="btn btn-secondary"
+                    data-copy="{{ initial_state.invite_url }}"
+                >
+                    Copy Invite
+                </button>
+            </div>
         </div>
 
         <div class="panel">
@@ -95,4 +102,22 @@
 </script>
 <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 <script src="{{ url_for('static', filename='js/game.js') }}"></script>
+<script>
+    const copyInviteButton = document.getElementById("copy-invite-btn");
+    if (copyInviteButton) {
+        copyInviteButton.addEventListener("click", async () => {
+            const originalText = copyInviteButton.textContent;
+            try {
+                await navigator.clipboard.writeText(copyInviteButton.dataset.copy);
+                copyInviteButton.textContent = "Copied";
+            } catch (error) {
+                copyInviteButton.textContent = "Copy failed";
+            }
+
+            setTimeout(() => {
+                copyInviteButton.textContent = originalText;
+            }, 1500);
+        });
+    }
+</script>
 {% endblock %}
