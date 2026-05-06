@@ -6,6 +6,7 @@
     <div style="background-color: #2a2a2a; padding: 30px; border-radius: 10px; width: 300px;">
         <h2 style="margin-bottom: 20px;">Login</h2>
         <form action="/login" method="POST">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div style="margin-bottom: 15px;">
                 <label style="display: block; margin-bottom: 5px; color: #aaa;">Username</label>
                 <input type="text" name="username" required
@@ -23,6 +24,7 @@
     <div style="background-color: #2a2a2a; padding: 30px; border-radius: 10px; width: 300px;">
         <h2 style="margin-bottom: 20px;">Register</h2>
         <form action="/register" method="POST">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div style="margin-bottom: 15px;">
                 <label style="display: block; margin-bottom: 5px; color: #aaa;">Username</label>
                 <input type="text" name="username" required

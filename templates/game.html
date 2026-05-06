@@ -8,6 +8,7 @@
     <!-- Board Section -->
     <div class="board-section">
 
+        <div id="connection-status" class="connection-status" hidden>Reconnecting...</div>
         <div id="status" class="status"></div>
 
         <div class="player-label opponent-name">
@@ -111,7 +112,8 @@
         timeControlDescription: {{ initial_state.time_control_description | tojson }},
         timeControlMode: {{ initial_state.time_control_mode | tojson }},
         whiteTimeRemaining: {{ initial_state.white_time_remaining | tojson }},
-        blackTimeRemaining: {{ initial_state.black_time_remaining | tojson }}
+        blackTimeRemaining: {{ initial_state.black_time_remaining | tojson }},
+        csrfToken: {{ csrf_token() | tojson }}
     };
 </script>
 <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>

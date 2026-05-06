@@ -1,10 +1,10 @@
-from flask import Flask, render_template, redirect, url_for, request, flash
+from flask import Flask, render_template, redirect, url_for, request, flash, session, jsonify
+from flask_migrate import Migrate
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_socketio import SocketIO, emit, join_room, leave_room
 from flask_mail import Mail, Message
 from models import db, User, Game
-from sqlalchemy import inspect, text
 import chess
 import uuid
 import os
@@ -14,6 +14,11 @@ import threading
 from datetime import datetime, timedelta
 import logging
 import requests
+import re
+import secrets
+import hmac
+import time
+from collections import defaultdict, deque
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -34,6 +39,9 @@ app.config["MAIL_DEFAULT_SENDER"] = os.environ.get("MAIL_USERNAME")
 app.config["BASE_URL"] = os.environ.get("BASE_URL", "http://localhost:8080")
 app.config["RESEND_API_KEY"] = os.environ.get("RESEND_API_KEY")
 app.config["TURN_TIME_HOURS"] = int(os.environ.get("TURN_TIME_HOURS", "24"))
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_SECURE"] = os.environ.get("SESSION_COOKIE_SECURE", "0") == "1"
 
 TIME_CONTROLS = {
     "daily": {
@@ -68,12 +76,17 @@ if database_url.startswith("postgres://"):
 app.config["SQLALCHEMY_DATABASE_URI"] = database_url
 
 db.init_app(app)
+migrate = Migrate(app, db)
 mail = Mail(app)
 
 # Allow all origins for dev; tighten in production via CORS_ALLOWED_ORIGINS env var.
 # The threading async mode uses simple-websocket in production, avoiding the
 # slow HTTP long-polling fallback.
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
+socketio = SocketIO(
+    app,
+    cors_allowed_origins=os.environ.get("CORS_ALLOWED_ORIGINS", "*"),
+    async_mode="threading"
+)
 
 print("MAIL_USERNAME:", app.config["MAIL_USERNAME"])
 print("MAIL_PASSWORD exists:", bool(app.config["MAIL_PASSWORD"]))
@@ -81,9 +94,90 @@ print("MAIL_PASSWORD exists:", bool(app.config["MAIL_PASSWORD"]))
 login_manager = LoginManager(app)
 login_manager.login_view = "index"
 
+RATE_LIMIT_RULES = {
+    "login": (10, 60),          # 10 attempts / minute
+    "register": (6, 60),        # 6 attempts / minute
+    "join_by_code": (20, 60),   # 20 attempts / minute
+    "new_game": (20, 60),       # 20 requests / minute
+    "make_move": (120, 60),     # 120 moves / minute
+    "offer_draw": (20, 60),
+    "accept_draw": (20, 60),
+    "resign": (20, 60),
+}
+rate_limit_buckets = defaultdict(deque)
+rate_limit_lock = threading.Lock()
+
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
+
+
+def get_or_create_csrf_token():
+    token = session.get("_csrf_token")
+    if not token:
+        token = secrets.token_urlsafe(32)
+        session["_csrf_token"] = token
+    return token
+
+
+@app.context_processor
+def inject_csrf_token():
+    return {"csrf_token": get_or_create_csrf_token}
+
+
+@app.before_request
+def validate_csrf_token():
+    if request.method != "POST":
+        return
+
+    expected = session.get("_csrf_token")
+    provided = request.headers.get("X-CSRF-Token") or request.form.get("csrf_token")
+    if expected and provided and hmac.compare_digest(expected, provided):
+        return
+
+    if request.path.startswith("/move/") or request.is_json:
+        return jsonify({"error": "Invalid CSRF token"}), 400
+
+    flash("Invalid session token. Please try again.")
+    return redirect(url_for("index"))
+
+
+@app.before_request
+def enforce_rate_limit():
+    if request.method != "POST":
+        return
+
+    endpoint = request.endpoint
+    if endpoint not in RATE_LIMIT_RULES:
+        return
+
+    max_requests, window_seconds = RATE_LIMIT_RULES[endpoint]
+    principal = f"user:{current_user.id}" if current_user.is_authenticated else f"ip:{request.remote_addr}"
+    bucket_key = f"{endpoint}:{principal}"
+    now = time.monotonic()
+    window_start = now - window_seconds
+
+    with rate_limit_lock:
+        bucket = rate_limit_buckets[bucket_key]
+        while bucket and bucket[0] < window_start:
+            bucket.popleft()
+
+        if len(bucket) >= max_requests:
+            if request.path.startswith("/move/") or request.is_json:
+                return jsonify({"error": "Too many requests. Please slow down."}), 429
+            flash("Too many requests. Please wait a moment and try again.")
+            return redirect(url_for("dashboard" if current_user.is_authenticated else "index"))
+
+        bucket.append(now)
+
+
+@app.after_request
+def set_security_headers(response):
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "SAMEORIGIN"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -266,37 +360,6 @@ def serialize_game_state(game, user_id=None):
 def broadcast_game_state(game, requesting_user_id=None):
     """Emit a game_update event to everyone in the game's SocketIO room."""
     socketio.emit("game_update", serialize_game_state(game), room=game.id)
-
-
-def ensure_game_timer_columns():
-    inspector = inspect(db.engine)
-    existing_columns = {column["name"] for column in inspector.get_columns("game")}
-    columns = {
-        "draw_offered_by": "INTEGER",
-        "join_code": "VARCHAR(8)",
-        "time_control": "VARCHAR(20) DEFAULT 'daily'",
-        "time_control_mode": "VARCHAR(20) DEFAULT 'per_move'",
-        "turn_time_seconds": "INTEGER DEFAULT 86400",
-        "white_time_remaining": "INTEGER",
-        "black_time_remaining": "INTEGER",
-        "last_move_uci": "VARCHAR(10)",
-        "last_move_flags": "VARCHAR(120)",
-    }
-
-    for name, definition in columns.items():
-        if name not in existing_columns:
-            db.session.execute(text(f"ALTER TABLE game ADD COLUMN {name} {definition}"))
-
-    rows = db.session.execute(text("SELECT id, join_code FROM game")).mappings().all()
-    for row in rows:
-        if row["join_code"]:
-            continue
-        db.session.execute(
-            text("UPDATE game SET join_code = :join_code WHERE id = :game_id"),
-            {"join_code": generate_join_code(), "game_id": row["id"]},
-        )
-
-    db.session.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -506,7 +569,9 @@ def make_move(game_id):
     if not game.is_players_turn(current_user.id):
         return {"error": "Not your turn"}, 400
 
-    move_uci = request.json.get("move")
+    move_uci = (request.json or {}).get("move", "")
+    if not isinstance(move_uci, str) or not re.fullmatch(r"^[a-h][1-8][a-h][1-8][qrbn]?$", move_uci):
+        return {"error": "Invalid move format"}, 400
 
     board = chess.Board(game.board_fen)
     try:
@@ -766,11 +831,6 @@ def check_square(game_id):
 
     return {"square": get_checked_king_square(game.board_fen)}
 
-
-# create tables on startup
-with app.app_context():
-    db.create_all()
-    ensure_game_timer_columns()
 
 if __name__ == "__main__":
     # Use socketio.run instead of app.run

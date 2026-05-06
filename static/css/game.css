@@ -151,6 +151,15 @@
     font-size: 15px;
 }
 
+.connection-status {
+    margin-bottom: 10px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: #5a3f17;
+    color: #ffe5b3;
+    font-size: 13px;
+}
+
 .status.your-turn {
     color: #5a9e6f;
     font-weight: bold;

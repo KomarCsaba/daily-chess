@@ -98,6 +98,7 @@
 <div class="dashboard-section">
     <h3 style="margin-bottom: 15px;">New Game</h3>
     <form action="/new_game" method="POST" class="new-game-grid">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         {% for key, control in time_controls.items() %}
         <label class="time-control-option">
             <input type="radio" name="time_control" value="{{ key }}" {% if key == "daily" %}checked{% endif %} style="margin-right: 6px;">
@@ -112,6 +113,7 @@
 <div class="dashboard-section">
     <h3 style="margin-bottom: 15px;">Join a Game</h3>
     <form action="/join_by_code" method="POST" class="join-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="text" name="code" placeholder="Enter code or paste invite link..." class="join-input">
         <button type="submit" class="btn">Join</button>
     </form>

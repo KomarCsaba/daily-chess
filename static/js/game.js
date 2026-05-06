@@ -15,7 +15,8 @@ const {
     timeControlDescription,
     timeControlMode: initialTimeControlMode,
     whiteTimeRemaining: initialWhiteTimeRemaining,
-    blackTimeRemaining: initialBlackTimeRemaining
+    blackTimeRemaining: initialBlackTimeRemaining,
+    csrfToken
 } = window.GAME_CONFIG;
 
 const PIECES = {
@@ -57,9 +58,23 @@ let soundCtx = null;
 ========================= */
 
 const socket = io();
+const connectionStatusEl = document.getElementById("connection-status");
 
 socket.on("connect", () => {
+    if (connectionStatusEl) connectionStatusEl.hidden = true;
     socket.emit("join_game", { game_id: gameId });
+});
+
+socket.on("disconnect", () => {
+    if (connectionStatusEl) connectionStatusEl.hidden = false;
+});
+
+socket.on("reconnect_attempt", () => {
+    if (connectionStatusEl) connectionStatusEl.hidden = false;
+});
+
+socket.on("reconnect", () => {
+    if (connectionStatusEl) connectionStatusEl.hidden = true;
 });
 
 socket.on("game_update", async (data) => {
@@ -527,7 +542,10 @@ async function makeMove(move) {
     try {
         const res = await fetch(`/move/${gameId}`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+                "Content-Type": "application/json",
+                "X-CSRF-Token": csrfToken
+            },
             body: JSON.stringify({ move })
         });
 
@@ -752,6 +770,14 @@ function createButton(text, className = "btn") {
     return button;
 }
 
+function appendCsrfInput(form) {
+    const tokenInput = document.createElement("input");
+    tokenInput.type = "hidden";
+    tokenInput.name = "csrf_token";
+    tokenInput.value = csrfToken;
+    form.appendChild(tokenInput);
+}
+
 function updateActions() {
     const actionsEl = document.getElementById("actions");
     actionsEl.innerHTML = "";
@@ -789,6 +815,7 @@ function updateActions() {
         const form = document.createElement("form");
         form.action = `/accept_draw/${gameId}`;
         form.method = "POST";
+        appendCsrfInput(form);
         const button = createButton("Accept Draw");
         button.style.cssText = `width: 100%; background-color: #5a7a9e;`;
         form.appendChild(button);
@@ -801,6 +828,7 @@ function updateActions() {
         const form = document.createElement("form");
         form.action = `/offer_draw/${gameId}`;
         form.method = "POST";
+        appendCsrfInput(form);
         const button = createButton("Offer Draw", "btn btn-secondary");
         button.style.width = "100%";
         form.appendChild(button);
@@ -816,6 +844,7 @@ function updateActions() {
     resignForm.action = `/resign/${gameId}`;
     resignForm.method = "POST";
     resignForm.onsubmit = () => confirm("Are you sure you want to resign?");
+    appendCsrfInput(resignForm);
 
     const resignBtn = createButton("Resign", "btn btn-secondary");
     resignBtn.style.cssText = `width: 100%; background-color: #6b2b2b;`;
