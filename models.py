@@ -43,6 +43,8 @@ class Game(db.Model):
     turn_time_seconds = db.Column(db.Integer, default=86400)
     white_time_remaining = db.Column(db.Integer, nullable=True)
     black_time_remaining = db.Column(db.Integer, nullable=True)
+    last_move_uci = db.Column(db.String(10), nullable=True)
+    last_move_flags = db.Column(db.String(120), nullable=True)
 
     def get_moves_list(self):
         if not self.move_history:

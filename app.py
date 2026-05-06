@@ -253,6 +253,8 @@ def serialize_game_state(game, user_id=None):
         "black_time_remaining": clocks["black"],
         "join_code": game.join_code,
         "invite_url": get_game_invite_url(game),
+        "last_move_uci": game.last_move_uci,
+        "last_move_flags": game.last_move_flags.split(",") if game.last_move_flags else [],
     }
 
     if user_id is not None:
@@ -277,6 +279,8 @@ def ensure_game_timer_columns():
         "turn_time_seconds": "INTEGER DEFAULT 86400",
         "white_time_remaining": "INTEGER",
         "black_time_remaining": "INTEGER",
+        "last_move_uci": "VARCHAR(10)",
+        "last_move_flags": "VARCHAR(120)",
     }
 
     for name, definition in columns.items():
@@ -522,6 +526,9 @@ def make_move(game_id):
             broadcast_game_state(game)
             return {"error": "Game ended on time", "game_status": game.status}, 400
 
+        is_capture = board.is_capture(move)
+        is_castling = board.is_castling(move)
+        is_promotion = move.promotion is not None
         san = board.san(move)
         board.push(move)
 
@@ -529,6 +536,7 @@ def make_move(game_id):
         moves.append(san)
         game.move_history = ",".join(moves)
         game.board_fen = board.fen()
+        game.last_move_uci = move.uci()
 
         next_turn = "black" if game.turn == "white" else "white"
         game.turn = next_turn
@@ -537,13 +545,27 @@ def make_move(game_id):
         if game.draw_offered_by != current_user.id:
             game.draw_offered_by = None
 
+        move_flags = []
+        if is_capture:
+            move_flags.append("capture")
+        if is_castling:
+            move_flags.append("castle")
+        if is_promotion:
+            move_flags.append("promotion")
+        if board.is_check():
+            move_flags.append("check")
+
         if board.is_checkmate():
+            move_flags.append("checkmate")
             game.status = "finished"
             winner = "white" if next_turn == "black" else "black"
             game.result = f"{winner}_wins"
         elif board.is_stalemate() or board.is_insufficient_material():
+            move_flags.append("draw")
             game.status = "finished"
             game.result = "draw"
+
+        game.last_move_flags = ",".join(move_flags)
 
         db.session.commit()
 
@@ -570,6 +592,8 @@ def make_move(game_id):
             "time_control_mode": response_state["time_control_mode"],
             "white_time_remaining": response_state["white_time_remaining"],
             "black_time_remaining": response_state["black_time_remaining"],
+            "last_move_uci": response_state["last_move_uci"],
+            "last_move_flags": response_state["last_move_flags"],
         }
 
     except Exception as e:

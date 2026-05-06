@@ -12,6 +12,8 @@
 
 .board {
     display: grid;
+    position: relative;
+    overflow: hidden;
 
     grid-template-columns: repeat(8, 70px);
     grid-template-rows: repeat(8, 70px);
@@ -38,6 +40,10 @@
     box-sizing: border-box;
 
     transition: background-color 0.15s ease;
+}
+
+.board.board-animating .square {
+    pointer-events: none;
 }
 
 .light {
@@ -286,6 +292,27 @@
 
 .last-move {
     box-shadow: inset 0 0 0 4px rgba(255, 229, 102, 0.95);
+}
+
+.move-ghost {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 48px;
+    line-height: 1;
+    z-index: 5;
+    pointer-events: none;
+    transition: transform 180ms ease-out;
+}
+
+.capture-flash {
+    animation: captureFlash 220ms ease-out;
+}
+
+@keyframes captureFlash {
+    0% { box-shadow: inset 0 0 0 3px rgba(255, 130, 130, 0.95); }
+    100% { box-shadow: inset 0 0 0 0 rgba(255, 130, 130, 0); }
 }
 
 .captures {

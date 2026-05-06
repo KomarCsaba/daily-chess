@@ -41,6 +41,8 @@ let timeoutSyncRequested = false;
 
 let checkedKingSquare = null;
 let lastMoveSquares = null;
+let lastHandledMoveSignature = null;
+let pendingAnimation = null;
 
 const INITIAL_PIECE_COUNTS = {
     white: { p: 8, n: 2, b: 2, r: 2, q: 1 },
@@ -61,7 +63,6 @@ socket.on("connect", () => {
 });
 
 socket.on("game_update", async (data) => {
-    const previousFenBeforeUpdate = currentFen;
     currentFen = data.fen;
     gameStatus = data.status;
     currentResult = data.result;
@@ -90,14 +91,13 @@ socket.on("game_update", async (data) => {
 
     clearSelection();
     setCheckedKingSquare(data.checked_king_square);
-    setLastMoveSquares(previousFenBeforeUpdate, currentFen, currentTurn);
+    syncLastMoveFeedback(data, { playEffects: true });
     renderMoveList(data.move_history || []);
     updateBoard();
     updateCapturedPieces();
     updateStatus();
     updateTimer();
     updateActions();
-    maybePlayMoveSound(previousFenBeforeUpdate, currentFen, data.checked_king_square);
 });
 
 /* =========================
@@ -124,6 +124,16 @@ function fenToBoard(fen) {
 
 function colRowToUci(col, row) {
     return String.fromCharCode(97 + col) + (8 - row);
+}
+
+function uciSquareToColRow(square) {
+    if (!square || square.length !== 2) return null;
+    const col = square.charCodeAt(0) - 97;
+    const rank = Number(square[1]);
+    if (Number.isNaN(rank)) return null;
+    const row = 8 - rank;
+    if (col < 0 || col > 7 || row < 0 || row > 7) return null;
+    return { col, row };
 }
 
 function isPlayersPiece(piece) {
@@ -168,13 +178,112 @@ function playTone(frequency, durationSeconds, volume = 0.03) {
 }
 
 function playCaptureSound() {
-    playTone(280, 0.16, 0.04);
-    setTimeout(() => playTone(220, 0.12, 0.03), 55);
+    playTone(260, 0.14, 0.045);
+    setTimeout(() => playTone(195, 0.12, 0.04), 45);
+    setTimeout(() => playTone(165, 0.11, 0.03), 95);
 }
 
 function playCheckSound() {
-    playTone(880, 0.16, 0.045);
-    setTimeout(() => playTone(1175, 0.19, 0.035), 65);
+    playTone(880, 0.11, 0.045);
+    setTimeout(() => playTone(1046, 0.11, 0.04), 45);
+    setTimeout(() => playTone(1318, 0.14, 0.038), 95);
+}
+
+function playMoveSound() {
+    playTone(520, 0.08, 0.03);
+    setTimeout(() => playTone(660, 0.09, 0.028), 45);
+}
+
+function playCastleSound() {
+    playTone(392, 0.1, 0.032);
+    setTimeout(() => playTone(523, 0.11, 0.03), 40);
+    setTimeout(() => playTone(659, 0.12, 0.028), 90);
+}
+
+function playPromotionSound() {
+    playTone(523, 0.08, 0.03);
+    setTimeout(() => playTone(659, 0.08, 0.03), 35);
+    setTimeout(() => playTone(784, 0.1, 0.03), 70);
+    setTimeout(() => playTone(1046, 0.13, 0.028), 115);
+}
+
+function playGameEndSound() {
+    playTone(784, 0.11, 0.04);
+    setTimeout(() => playTone(659, 0.11, 0.038), 45);
+    setTimeout(() => playTone(523, 0.18, 0.036), 95);
+}
+
+function getMoveSignature(data) {
+    const uci = data.last_move_uci || "";
+    return uci || null;
+}
+
+function setLastMoveFromUci(lastMoveUci) {
+    if (!lastMoveUci || lastMoveUci.length < 4) {
+        lastMoveSquares = null;
+        return;
+    }
+
+    const from = uciSquareToColRow(lastMoveUci.slice(0, 2));
+    const to = uciSquareToColRow(lastMoveUci.slice(2, 4));
+    if (!from || !to) {
+        lastMoveSquares = null;
+        return;
+    }
+
+    lastMoveSquares = { from, to };
+}
+
+function playMoveFeedback(flags) {
+    const moveFlags = Array.isArray(flags) ? flags : [];
+    if (moveFlags.includes("checkmate") || moveFlags.includes("draw")) {
+        playGameEndSound();
+        return;
+    }
+    if (moveFlags.includes("check")) {
+        playCheckSound();
+        return;
+    }
+    if (moveFlags.includes("promotion")) {
+        playPromotionSound();
+        return;
+    }
+    if (moveFlags.includes("castle")) {
+        playCastleSound();
+        return;
+    }
+    if (moveFlags.includes("capture")) {
+        playCaptureSound();
+        return;
+    }
+    playMoveSound();
+}
+
+function queueMoveAnimation(lastMoveUci, flags) {
+    if (!lastMoveUci || lastMoveUci.length < 4) return;
+    const from = uciSquareToColRow(lastMoveUci.slice(0, 2));
+    const to = uciSquareToColRow(lastMoveUci.slice(2, 4));
+    if (!from || !to) return;
+    pendingAnimation = {
+        from,
+        to,
+        isCapture: Array.isArray(flags) && flags.includes("capture"),
+        isCastle: Array.isArray(flags) && flags.includes("castle")
+    };
+}
+
+function syncLastMoveFeedback(data, { playEffects }) {
+    setLastMoveFromUci(data.last_move_uci);
+    const signature = getMoveSignature(data);
+    if (!signature) return;
+    if (!playEffects) {
+        lastHandledMoveSignature = signature;
+        return;
+    }
+    if (signature === lastHandledMoveSignature) return;
+    lastHandledMoveSignature = signature;
+    queueMoveAnimation(data.last_move_uci, data.last_move_flags || []);
+    playMoveFeedback(data.last_move_flags || []);
 }
 
 function countPiecesByColor(pieces) {
@@ -218,88 +327,6 @@ function updateCapturedPieces() {
     blackCapturedEl.textContent = captured.black.map(piece => PIECES[piece]).join(" ");
 }
 
-function setLastMoveSquares(previousFenValue, nextFenValue, nextTurn) {
-    if (!previousFenValue || !nextFenValue || previousFenValue === nextFenValue) {
-        lastMoveSquares = null;
-        return;
-    }
-
-    const previousBoard = fenToBoard(previousFenValue);
-    const nextBoard = fenToBoard(nextFenValue);
-    const moverColor = nextTurn === "white" ? "black" : "white";
-    const changedSquares = [];
-
-    for (let col = 0; col < 8; col++) {
-        for (let row = 0; row < 8; row++) {
-            const key = `${col},${row}`;
-            if ((previousBoard[key] || null) !== (nextBoard[key] || null)) {
-                changedSquares.push({ col, row, key });
-            }
-        }
-    }
-
-    if (!changedSquares.length) {
-        lastMoveSquares = null;
-        return;
-    }
-
-    const fromCandidates = changedSquares.filter(square => {
-        const prevPiece = previousBoard[square.key];
-        const nextPiece = nextBoard[square.key];
-        if (!prevPiece) return false;
-        const isMoverPiece = moverColor === "white"
-            ? prevPiece === prevPiece.toUpperCase()
-            : prevPiece === prevPiece.toLowerCase();
-        return isMoverPiece && !nextPiece;
-    });
-
-    const toCandidates = changedSquares.filter(square => {
-        const nextPiece = nextBoard[square.key];
-        const prevPiece = previousBoard[square.key];
-        if (!nextPiece) return false;
-        const isMoverPiece = moverColor === "white"
-            ? nextPiece === nextPiece.toUpperCase()
-            : nextPiece === nextPiece.toLowerCase();
-        return isMoverPiece && prevPiece !== nextPiece;
-    });
-
-    if (!fromCandidates.length || !toCandidates.length) {
-        lastMoveSquares = null;
-        return;
-    }
-
-    let from = fromCandidates[0];
-    let to = toCandidates[0];
-
-    const kingChar = moverColor === "white" ? "K" : "k";
-    const kingFrom = fromCandidates.find(square => previousBoard[square.key] === kingChar);
-    const kingTo = toCandidates.find(square => nextBoard[square.key] === kingChar);
-    if (kingFrom && kingTo) {
-        from = kingFrom;
-        to = kingTo;
-    }
-
-    lastMoveSquares = {
-        from: { col: from.col, row: from.row },
-        to: { col: to.col, row: to.row }
-    };
-}
-
-function didCapture(previousFenValue, nextFenValue) {
-    if (!previousFenValue || !nextFenValue || previousFenValue === nextFenValue) return false;
-    return Object.keys(fenToBoard(nextFenValue)).length < Object.keys(fenToBoard(previousFenValue)).length;
-}
-
-function maybePlayMoveSound(previousFenValue, nextFenValue, checkedSquare) {
-    if (!previousFenValue || !nextFenValue || previousFenValue === nextFenValue) return;
-    if (checkedSquare) {
-        playCheckSound();
-        return;
-    }
-    if (didCapture(previousFenValue, nextFenValue)) {
-        playCaptureSound();
-    }
-}
 
 /* =========================
    Board Rendering
@@ -366,6 +393,64 @@ function updateBoard() {
             square.classList.add("last-move");
         }
     });
+
+    maybeAnimateLastMove();
+}
+
+function getSquareElement(col, row) {
+    return document.querySelector(`.square[data-col="${col}"][data-row="${row}"]`);
+}
+
+function maybeAnimateLastMove() {
+    if (!pendingAnimation) return;
+    const boardEl = document.getElementById("board");
+    if (!boardEl) {
+        pendingAnimation = null;
+        return;
+    }
+
+    const fromSquare = getSquareElement(pendingAnimation.from.col, pendingAnimation.from.row);
+    const toSquare = getSquareElement(pendingAnimation.to.col, pendingAnimation.to.row);
+    if (!fromSquare || !toSquare) {
+        pendingAnimation = null;
+        return;
+    }
+
+    const boardRect = boardEl.getBoundingClientRect();
+    const fromRect = fromSquare.getBoundingClientRect();
+    const toRect = toSquare.getBoundingClientRect();
+    const toPiece = toSquare.textContent;
+
+    if (!toPiece) {
+        pendingAnimation = null;
+        return;
+    }
+
+    const ghost = document.createElement("div");
+    ghost.className = `move-ghost ${toSquare.classList.contains("piece-white") ? "piece-white" : "piece-black"}`;
+    ghost.textContent = toPiece;
+    ghost.style.left = `${fromRect.left - boardRect.left}px`;
+    ghost.style.top = `${fromRect.top - boardRect.top}px`;
+    ghost.style.width = `${fromRect.width}px`;
+    ghost.style.height = `${fromRect.height}px`;
+
+    boardEl.appendChild(ghost);
+    boardEl.classList.add("board-animating");
+    requestAnimationFrame(() => {
+        ghost.style.transform = `translate(${toRect.left - fromRect.left}px, ${toRect.top - fromRect.top}px)`;
+    });
+
+    if (pendingAnimation.isCapture) {
+        toSquare.classList.add("capture-flash");
+        setTimeout(() => toSquare.classList.remove("capture-flash"), 220);
+    }
+
+    setTimeout(() => {
+        ghost.remove();
+        boardEl.classList.remove("board-animating");
+    }, 210);
+
+    pendingAnimation = null;
 }
 
 /* =========================
@@ -440,7 +525,6 @@ async function onSquareClick(event) {
 
 async function makeMove(move) {
     try {
-        const previousFenBeforeMove = currentFen;
         const res = await fetch(`/move/${gameId}`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -468,13 +552,16 @@ async function makeMove(move) {
 
         clearSelection();
         setCheckedKingSquare(data.checked_king_square);
-        setLastMoveSquares(previousFenBeforeMove, currentFen, currentTurn);
+        syncLastMoveFeedback({
+            last_move_uci: data.last_move_uci,
+            last_move_flags: data.last_move_flags || [],
+            move_history: []
+        }, { playEffects: true });
         updateBoard();
         updateCapturedPieces();
         updateStatus();
         updateTimer();
         updateActions();
-        maybePlayMoveSound(previousFenBeforeMove, currentFen, data.checked_king_square);
         // Move list will arrive via game_update broadcast
 
     } catch (err) {
@@ -795,7 +882,6 @@ function setCheckedKingSquare(square) {
 
 async function syncGameState() {
     try {
-        const previousFenBeforeSync = currentFen;
         const res = await fetch(`/game_state/${gameId}`);
         const data = await res.json();
 
@@ -812,14 +898,13 @@ async function syncGameState() {
         timeoutSyncRequested = false;
 
         setCheckedKingSquare(data.checked_king_square);
-        setLastMoveSquares(previousFenBeforeSync, currentFen, currentTurn);
+        syncLastMoveFeedback(data, { playEffects: false });
         updateBoard();
         updateCapturedPieces();
         updateStatus();
         updateTimer();
         updateActions();
         renderMoveList(data.move_history || []);
-        maybePlayMoveSound(previousFenBeforeSync, currentFen, data.checked_king_square);
     } catch (err) {
         console.error("Failed initial sync", err);
     }
