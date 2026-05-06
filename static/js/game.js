@@ -40,6 +40,15 @@ let currentBlackTimeRemaining = initialBlackTimeRemaining;
 let timeoutSyncRequested = false;
 
 let checkedKingSquare = null;
+let lastMoveSquares = null;
+
+const INITIAL_PIECE_COUNTS = {
+    white: { p: 8, n: 2, b: 2, r: 2, q: 1 },
+    black: { p: 8, n: 2, b: 2, r: 2, q: 1 }
+};
+
+const audioContext = window.AudioContext || window.webkitAudioContext;
+let soundCtx = null;
 
 /* =========================
    WebSocket Setup
@@ -52,6 +61,7 @@ socket.on("connect", () => {
 });
 
 socket.on("game_update", async (data) => {
+    const previousFenBeforeUpdate = currentFen;
     currentFen = data.fen;
     gameStatus = data.status;
     currentResult = data.result;
@@ -80,11 +90,14 @@ socket.on("game_update", async (data) => {
 
     clearSelection();
     setCheckedKingSquare(data.checked_king_square);
+    setLastMoveSquares(previousFenBeforeUpdate, currentFen, currentTurn);
     renderMoveList(data.move_history || []);
     updateBoard();
+    updateCapturedPieces();
     updateStatus();
     updateTimer();
     updateActions();
+    maybePlayMoveSound(previousFenBeforeUpdate, currentFen, data.checked_king_square);
 });
 
 /* =========================
@@ -124,6 +137,168 @@ function isPlayersPiece(piece) {
 function clearSelection() {
     selectedSquare = null;
     legalMoves = [];
+}
+
+function getOrCreateAudioContext() {
+    if (!audioContext) return null;
+    if (!soundCtx) soundCtx = new audioContext();
+    if (soundCtx.state === "suspended") {
+        soundCtx.resume().catch(() => {});
+    }
+    return soundCtx;
+}
+
+function playTone(frequency, durationSeconds, volume = 0.03) {
+    const ctx = getOrCreateAudioContext();
+    if (!ctx) return;
+
+    const oscillator = ctx.createOscillator();
+    const gain = ctx.createGain();
+    oscillator.type = "triangle";
+    oscillator.frequency.value = frequency;
+    gain.gain.value = volume;
+    oscillator.connect(gain);
+    gain.connect(ctx.destination);
+
+    const now = ctx.currentTime;
+    gain.gain.setValueAtTime(volume, now);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + durationSeconds);
+    oscillator.start(now);
+    oscillator.stop(now + durationSeconds);
+}
+
+function playCaptureSound() {
+    playTone(280, 0.16, 0.04);
+    setTimeout(() => playTone(220, 0.12, 0.03), 55);
+}
+
+function playCheckSound() {
+    playTone(880, 0.16, 0.045);
+    setTimeout(() => playTone(1175, 0.19, 0.035), 65);
+}
+
+function countPiecesByColor(pieces) {
+    const counts = {
+        white: { p: 0, n: 0, b: 0, r: 0, q: 0 },
+        black: { p: 0, n: 0, b: 0, r: 0, q: 0 }
+    };
+
+    Object.values(pieces).forEach(piece => {
+        const lower = piece.toLowerCase();
+        if (!(lower in counts.white) || lower === "k") return;
+        if (piece === piece.toUpperCase()) counts.white[lower]++;
+        else counts.black[lower]++;
+    });
+
+    return counts;
+}
+
+function getCapturedPiecesByColor() {
+    const boardCounts = countPiecesByColor(fenToBoard(currentFen));
+    const captured = { white: [], black: [] };
+    const pieceOrder = ["q", "r", "b", "n", "p"];
+
+    pieceOrder.forEach(type => {
+        const missingWhite = Math.max(0, INITIAL_PIECE_COUNTS.white[type] - boardCounts.white[type]);
+        const missingBlack = Math.max(0, INITIAL_PIECE_COUNTS.black[type] - boardCounts.black[type]);
+        for (let i = 0; i < missingWhite; i++) captured.white.push(type.toUpperCase());
+        for (let i = 0; i < missingBlack; i++) captured.black.push(type);
+    });
+
+    return captured;
+}
+
+function updateCapturedPieces() {
+    const whiteCapturedEl = document.getElementById("white-captured");
+    const blackCapturedEl = document.getElementById("black-captured");
+    if (!whiteCapturedEl || !blackCapturedEl) return;
+
+    const captured = getCapturedPiecesByColor();
+    whiteCapturedEl.textContent = captured.white.map(piece => PIECES[piece]).join(" ");
+    blackCapturedEl.textContent = captured.black.map(piece => PIECES[piece]).join(" ");
+}
+
+function setLastMoveSquares(previousFenValue, nextFenValue, nextTurn) {
+    if (!previousFenValue || !nextFenValue || previousFenValue === nextFenValue) {
+        lastMoveSquares = null;
+        return;
+    }
+
+    const previousBoard = fenToBoard(previousFenValue);
+    const nextBoard = fenToBoard(nextFenValue);
+    const moverColor = nextTurn === "white" ? "black" : "white";
+    const changedSquares = [];
+
+    for (let col = 0; col < 8; col++) {
+        for (let row = 0; row < 8; row++) {
+            const key = `${col},${row}`;
+            if ((previousBoard[key] || null) !== (nextBoard[key] || null)) {
+                changedSquares.push({ col, row, key });
+            }
+        }
+    }
+
+    if (!changedSquares.length) {
+        lastMoveSquares = null;
+        return;
+    }
+
+    const fromCandidates = changedSquares.filter(square => {
+        const prevPiece = previousBoard[square.key];
+        const nextPiece = nextBoard[square.key];
+        if (!prevPiece) return false;
+        const isMoverPiece = moverColor === "white"
+            ? prevPiece === prevPiece.toUpperCase()
+            : prevPiece === prevPiece.toLowerCase();
+        return isMoverPiece && !nextPiece;
+    });
+
+    const toCandidates = changedSquares.filter(square => {
+        const nextPiece = nextBoard[square.key];
+        const prevPiece = previousBoard[square.key];
+        if (!nextPiece) return false;
+        const isMoverPiece = moverColor === "white"
+            ? nextPiece === nextPiece.toUpperCase()
+            : nextPiece === nextPiece.toLowerCase();
+        return isMoverPiece && prevPiece !== nextPiece;
+    });
+
+    if (!fromCandidates.length || !toCandidates.length) {
+        lastMoveSquares = null;
+        return;
+    }
+
+    let from = fromCandidates[0];
+    let to = toCandidates[0];
+
+    const kingChar = moverColor === "white" ? "K" : "k";
+    const kingFrom = fromCandidates.find(square => previousBoard[square.key] === kingChar);
+    const kingTo = toCandidates.find(square => nextBoard[square.key] === kingChar);
+    if (kingFrom && kingTo) {
+        from = kingFrom;
+        to = kingTo;
+    }
+
+    lastMoveSquares = {
+        from: { col: from.col, row: from.row },
+        to: { col: to.col, row: to.row }
+    };
+}
+
+function didCapture(previousFenValue, nextFenValue) {
+    if (!previousFenValue || !nextFenValue || previousFenValue === nextFenValue) return false;
+    return Object.keys(fenToBoard(nextFenValue)).length < Object.keys(fenToBoard(previousFenValue)).length;
+}
+
+function maybePlayMoveSound(previousFenValue, nextFenValue, checkedSquare) {
+    if (!previousFenValue || !nextFenValue || previousFenValue === nextFenValue) return;
+    if (checkedSquare) {
+        playCheckSound();
+        return;
+    }
+    if (didCapture(previousFenValue, nextFenValue)) {
+        playCaptureSound();
+    }
 }
 
 /* =========================
@@ -179,6 +354,16 @@ function updateBoard() {
 
         if (checkedKingSquare !== null && checkedKingSquare.col === col && checkedKingSquare.row === row) {
             square.classList.add("check");
+        }
+
+        const isLastMoveFrom = lastMoveSquares
+            && lastMoveSquares.from.col === col
+            && lastMoveSquares.from.row === row;
+        const isLastMoveTo = lastMoveSquares
+            && lastMoveSquares.to.col === col
+            && lastMoveSquares.to.row === row;
+        if (isLastMoveFrom || isLastMoveTo) {
+            square.classList.add("last-move");
         }
     });
 }
@@ -255,6 +440,7 @@ async function onSquareClick(event) {
 
 async function makeMove(move) {
     try {
+        const previousFenBeforeMove = currentFen;
         const res = await fetch(`/move/${gameId}`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -282,10 +468,13 @@ async function makeMove(move) {
 
         clearSelection();
         setCheckedKingSquare(data.checked_king_square);
+        setLastMoveSquares(previousFenBeforeMove, currentFen, currentTurn);
         updateBoard();
+        updateCapturedPieces();
         updateStatus();
         updateTimer();
         updateActions();
+        maybePlayMoveSound(previousFenBeforeMove, currentFen, data.checked_king_square);
         // Move list will arrive via game_update broadcast
 
     } catch (err) {
@@ -606,6 +795,7 @@ function setCheckedKingSquare(square) {
 
 async function syncGameState() {
     try {
+        const previousFenBeforeSync = currentFen;
         const res = await fetch(`/game_state/${gameId}`);
         const data = await res.json();
 
@@ -622,11 +812,14 @@ async function syncGameState() {
         timeoutSyncRequested = false;
 
         setCheckedKingSquare(data.checked_king_square);
+        setLastMoveSquares(previousFenBeforeSync, currentFen, currentTurn);
         updateBoard();
+        updateCapturedPieces();
         updateStatus();
         updateTimer();
         updateActions();
         renderMoveList(data.move_history || []);
+        maybePlayMoveSound(previousFenBeforeSync, currentFen, data.checked_king_square);
     } catch (err) {
         console.error("Failed initial sync", err);
     }

@@ -284,6 +284,38 @@
     background-color: #c94c4c !important;
 }
 
+.last-move {
+    box-shadow: inset 0 0 0 4px rgba(255, 229, 102, 0.95);
+}
+
+.captures {
+    display: grid;
+    gap: 8px;
+}
+
+.captures-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.captures-label {
+    color: #aaa;
+    font-size: 13px;
+    min-width: 44px;
+}
+
+.captures-pieces {
+    flex: 1;
+    min-height: 22px;
+    color: #f3f3f3;
+    text-align: right;
+    letter-spacing: 1px;
+    font-size: 22px;
+    line-height: 1;
+}
+
 @media (max-width: 900px) {
     .game-layout {
         flex-direction: column;
