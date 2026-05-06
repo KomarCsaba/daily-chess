@@ -130,6 +130,10 @@ def validate_csrf_token():
     if request.method != "POST":
         return
 
+    # Skip CSRF validation for login/register if no session exists yet
+    if request.path in ["/login", "/register"] and not session.get("_csrf_token"):
+        return
+
     expected = session.get("_csrf_token")
     provided = request.headers.get("X-CSRF-Token") or request.form.get("csrf_token")
     if expected and provided and hmac.compare_digest(expected, provided):
