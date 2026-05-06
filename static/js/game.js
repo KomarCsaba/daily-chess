@@ -6,7 +6,10 @@ const {
     gameStatus: initialStatus,
     drawOfferedBy,
     myId,
-    gameResult
+    gameResult,
+    turn: initialTurnColor,
+    turnDeadline: initialTurnDeadline,
+    turnTimeHours
 } = window.GAME_CONFIG;
 
 const PIECES = {
@@ -23,6 +26,9 @@ let legalMoves = [];
 
 let currentDrawOfferedBy = drawOfferedBy;
 let currentResult = gameResult;
+let currentTurn = initialTurnColor;
+let currentTurnDeadline = initialTurnDeadline;
+let timeoutSyncRequested = false;
 
 let checkedKingSquare = null;
 
@@ -41,6 +47,9 @@ socket.on("game_update", async (data) => {
     gameStatus = data.status;
     currentResult = data.result;
     currentDrawOfferedBy = data.draw_offered_by ?? null;
+    currentTurn = data.turn;
+    currentTurnDeadline = data.turn_deadline;
+    timeoutSyncRequested = false;
 
     // Determine whose turn it is from the server payload
     if (data.white_id && data.black_id) {
@@ -62,6 +71,7 @@ socket.on("game_update", async (data) => {
     renderMoveList(data.move_history || []);
     updateBoard();
     updateStatus();
+    updateTimer();
     updateActions();
 });
 
@@ -252,11 +262,15 @@ async function makeMove(move) {
         currentFen = data.fen;
         gameStatus = data.game_status;
         isMyTurn = false;
+        currentTurn = data.turn;
+        currentTurnDeadline = data.turn_deadline;
+        timeoutSyncRequested = false;
 
         clearSelection();
         setCheckedKingSquare(data.checked_king_square);
         updateBoard();
         updateStatus();
+        updateTimer();
         updateActions();
         // Move list will arrive via game_update broadcast
 
@@ -284,6 +298,62 @@ function updateStatus() {
     } else {
         statusEl.textContent = "Waiting for opponent...";
         statusEl.classList.add("waiting");
+    }
+}
+
+function formatDuration(totalSeconds) {
+    const seconds = Math.max(0, Math.floor(totalSeconds));
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const remainingSeconds = seconds % 60;
+
+    if (hours >= 1) {
+        return `${hours}h ${String(minutes).padStart(2, "0")}m`;
+    }
+
+    return `${minutes}m ${String(remainingSeconds).padStart(2, "0")}s`;
+}
+
+function updateTimer() {
+    const labelEl = document.getElementById("timer-label");
+    const valueEl = document.getElementById("timer-value");
+    if (!labelEl || !valueEl) return;
+
+    valueEl.className = "timer-value";
+
+    if (gameStatus === "waiting") {
+        labelEl.textContent = "Starts when opponent joins";
+        valueEl.textContent = `${turnTimeHours}h per move`;
+        return;
+    }
+
+    if (gameStatus === "finished") {
+        labelEl.textContent = "Game finished";
+        valueEl.textContent = currentResult === "draw" ? "Draw" : "Clock stopped";
+        return;
+    }
+
+    if (!currentTurnDeadline) {
+        labelEl.textContent = "Clock unavailable";
+        valueEl.textContent = "";
+        return;
+    }
+
+    const deadline = Date.parse(currentTurnDeadline);
+    const secondsLeft = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+
+    labelEl.textContent = currentTurn === myColor ? "Your clock" : "Opponent clock";
+    valueEl.textContent = formatDuration(secondsLeft);
+
+    if (secondsLeft <= 3600) {
+        valueEl.classList.add("timer-danger");
+    } else if (secondsLeft <= 6 * 3600) {
+        valueEl.classList.add("timer-warning");
+    }
+
+    if (secondsLeft === 0 && !timeoutSyncRequested) {
+        timeoutSyncRequested = true;
+        syncGameState();
     }
 }
 
@@ -315,6 +385,12 @@ function renderMoveList(moves) {
         const blackMove = document.createElement("span");
         blackMove.className = "move black-move";
         blackMove.textContent = moves[i + 1] || "";
+
+        if (i === moves.length - 1) {
+            whiteMove.classList.add("latest-move");
+        } else if (i + 1 === moves.length - 1) {
+            blackMove.classList.add("latest-move");
+        }
 
         row.appendChild(moveNumber);
         row.appendChild(whiteMove);
@@ -475,10 +551,14 @@ async function syncGameState() {
         isMyTurn = data.is_my_turn;
         currentResult = data.result;
         currentDrawOfferedBy = data.draw_offered_by;
+        currentTurn = data.turn;
+        currentTurnDeadline = data.turn_deadline;
+        timeoutSyncRequested = false;
 
         setCheckedKingSquare(data.checked_king_square);
         updateBoard();
         updateStatus();
+        updateTimer();
         updateActions();
         renderMoveList(data.move_history || []);
     } catch (err) {
@@ -493,3 +573,4 @@ async function syncGameState() {
 renderCoordinates();
 buildBoard();
 syncGameState();
+setInterval(updateTimer, 1000);

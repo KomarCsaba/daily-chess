@@ -52,6 +52,14 @@
         </div>
 
         <div class="panel">
+            <div class="panel-title">Daily Timer</div>
+            <div id="timer" class="timer">
+                <div id="timer-label" class="timer-label"></div>
+                <div id="timer-value" class="timer-value"></div>
+            </div>
+        </div>
+
+        <div class="panel">
             <div class="panel-title">Moves</div>
             <div id="moves" class="moves-list"></div>
         </div>
@@ -65,12 +73,16 @@
     window.GAME_CONFIG = {
         gameId: {{ game.id | tojson }},
         myColor: {{ ('white' if game.white_id == current_user.id else 'black') | tojson }},
-        currentFen: {{ game.board_fen | tojson }},
-        isMyTurn: {{ game.is_players_turn(current_user.id) | tojson }},
-        gameStatus: {{ game.status | tojson }},
-        drawOfferedBy: {{ game.draw_offered_by | tojson }},
+        currentFen: {{ initial_state.fen | tojson }},
+        isMyTurn: {{ initial_state.is_my_turn | tojson }},
+        gameStatus: {{ initial_state.status | tojson }},
+        drawOfferedBy: {{ initial_state.draw_offered_by | tojson }},
         myId: {{ current_user.id | tojson }},
-        gameResult: {{ game.result | tojson }}
+        gameResult: {{ initial_state.result | tojson }},
+        turn: {{ initial_state.turn | tojson }},
+        turnDeadline: {{ initial_state.turn_deadline | tojson }},
+        secondsRemaining: {{ initial_state.seconds_remaining | tojson }},
+        turnTimeHours: {{ initial_state.turn_time_hours | tojson }}
     };
 </script>
 <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>

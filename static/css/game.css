@@ -124,6 +124,13 @@
 
 .move {
     font-family: monospace;
+    border-radius: 4px;
+    padding: 1px 4px;
+}
+
+.latest-move {
+    background: rgba(90, 158, 111, 0.2);
+    color: #dff3e5;
 }
 
 .empty-moves {
@@ -145,6 +152,34 @@
 
 .status.waiting {
     color: #aaa;
+}
+
+.timer {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+}
+
+.timer-label {
+    color: #aaa;
+    font-size: 13px;
+}
+
+.timer-value {
+    color: #f3f3f3;
+    font-family: monospace;
+    font-size: 20px;
+    font-weight: bold;
+    white-space: nowrap;
+}
+
+.timer-warning {
+    color: #d9b86c;
+}
+
+.timer-danger {
+    color: #d96c6c;
 }
 
 .player-label {

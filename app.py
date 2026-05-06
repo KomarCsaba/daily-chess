@@ -8,7 +8,7 @@ import chess
 import uuid
 import os
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 import requests
 
@@ -30,6 +30,7 @@ app.config["MAIL_DEFAULT_SENDER"] = os.environ.get("MAIL_USERNAME")
 
 app.config["BASE_URL"] = os.environ.get("BASE_URL", "http://localhost:8080")
 app.config["RESEND_API_KEY"] = os.environ.get("RESEND_API_KEY")
+app.config["TURN_TIME_HOURS"] = int(os.environ.get("TURN_TIME_HOURS", "24"))
 
 database_url = os.environ.get("DATABASE_URL", "sqlite:///chess.db")
 if database_url.startswith("postgres://"):
@@ -98,8 +99,31 @@ def get_checked_king_square(board_fen):
         return None
 
 
-def broadcast_game_state(game, requesting_user_id=None):
-    """Emit a game_update event to everyone in the game's SocketIO room."""
+def get_turn_deadline(game):
+    if game.status != "active" or not game.last_move_at:
+        return None
+    return game.last_move_at + timedelta(hours=app.config["TURN_TIME_HOURS"])
+
+
+def apply_timeout_if_needed(game):
+    deadline = get_turn_deadline(game)
+    if not deadline or datetime.utcnow() < deadline:
+        return False
+
+    timed_out_color = game.turn
+    winner = "black" if timed_out_color == "white" else "white"
+    game.status = "finished"
+    game.result = f"{winner}_wins"
+    db.session.commit()
+    return True
+
+
+def serialize_game_state(game, user_id=None):
+    deadline = get_turn_deadline(game)
+    seconds_remaining = None
+    if deadline:
+        seconds_remaining = max(0, int((deadline - datetime.utcnow()).total_seconds()))
+
     payload = {
         "fen": game.board_fen,
         "status": game.status,
@@ -110,8 +134,20 @@ def broadcast_game_state(game, requesting_user_id=None):
         "black_id": game.black_id,
         "turn": game.turn,
         "checked_king_square": get_checked_king_square(game.board_fen),
+        "turn_deadline": deadline.isoformat() + "Z" if deadline else None,
+        "seconds_remaining": seconds_remaining,
+        "turn_time_hours": app.config["TURN_TIME_HOURS"],
     }
-    socketio.emit("game_update", payload, room=game.id)
+
+    if user_id is not None:
+        payload["is_my_turn"] = game.is_players_turn(user_id)
+
+    return payload
+
+
+def broadcast_game_state(game, requesting_user_id=None):
+    """Emit a game_update event to everyone in the game's SocketIO room."""
+    socketio.emit("game_update", serialize_game_state(game), room=game.id)
 
 
 # ---------------------------------------------------------------------------
@@ -229,6 +265,7 @@ def join_game(game_id):
 
     game.black_id = current_user.id
     game.status = "active"
+    game.last_move_at = datetime.utcnow()
     db.session.commit()
 
     # Notify the waiting player that an opponent joined
@@ -244,7 +281,9 @@ def game(game_id):
     if not game:
         flash("Game not found")
         return redirect(url_for("dashboard"))
-    return render_template("game.html", game=game)
+    if apply_timeout_if_needed(game):
+        broadcast_game_state(game)
+    return render_template("game.html", game=game, initial_state=serialize_game_state(game, current_user.id))
 
 
 @app.route("/moves/<game_id>")
@@ -263,6 +302,10 @@ def make_move(game_id):
 
     if not game or game.status != "active":
         return {"error": "Game not found or not active"}, 400
+
+    if apply_timeout_if_needed(game):
+        broadcast_game_state(game)
+        return {"error": "Game ended on time", "game_status": game.status}, 400
 
     if not game.is_players_turn(current_user.id):
         return {"error": "Not your turn"}, 400
@@ -311,11 +354,15 @@ def make_move(game_id):
                 args=(game, opponent)
             ).start()
 
+        response_state = serialize_game_state(game, current_user.id)
         return {
             "success": True,
-            "fen": board.fen(),
-            "game_status": game.status,
-            "checked_king_square": get_checked_king_square(game.board_fen),
+            "fen": response_state["fen"],
+            "game_status": response_state["status"],
+            "checked_king_square": response_state["checked_king_square"],
+            "turn": response_state["turn"],
+            "turn_deadline": response_state["turn_deadline"],
+            "seconds_remaining": response_state["seconds_remaining"],
         }
 
     except Exception as e:
@@ -364,6 +411,10 @@ def legal_moves(game_id, col, row):
     if not game:
         return {"moves": []}
 
+    if apply_timeout_if_needed(game):
+        broadcast_game_state(game)
+        return {"moves": []}
+
     board = chess.Board(game.board_fen)
     square = chess.square(col, 7 - row)
     moves = []
@@ -383,15 +434,10 @@ def game_state(game_id):
     if not game:
         return {"error": "Game not found"}, 404
 
-    return {
-        "fen": game.board_fen,
-        "status": game.status,
-        "is_my_turn": game.is_players_turn(current_user.id),
-        "result": game.result,
-        "draw_offered_by": game.draw_offered_by,
-        "move_history": game.get_moves_list(),
-        "checked_king_square": get_checked_king_square(game.board_fen),
-    }
+    if apply_timeout_if_needed(game):
+        broadcast_game_state(game)
+
+    return serialize_game_state(game, current_user.id)
 
 
 @app.route("/resign/<game_id>", methods=["POST"])
@@ -401,6 +447,11 @@ def resign(game_id):
     if not game or game.status != "active":
         flash("Invalid game")
         return redirect(url_for("dashboard"))
+
+    if apply_timeout_if_needed(game):
+        broadcast_game_state(game)
+        flash("Game ended on time")
+        return redirect(url_for("game", game_id=game_id))
 
     if not game.is_players_turn(current_user.id):
         flash("Not your turn")
@@ -420,6 +471,10 @@ def resign(game_id):
 @login_required
 def offer_draw(game_id):
     game = Game.query.get(game_id)
+    if game and apply_timeout_if_needed(game):
+        broadcast_game_state(game)
+        return redirect(url_for("game", game_id=game_id))
+
     if not game or game.status != "active" or not game.is_players_turn(current_user.id):
         return redirect(url_for("game", game_id=game_id))
 
@@ -438,6 +493,11 @@ def accept_draw(game_id):
     game = Game.query.get(game_id)
     if not game or game.status != "active":
         return redirect(url_for("dashboard"))
+
+    if apply_timeout_if_needed(game):
+        broadcast_game_state(game)
+        flash("Game ended on time")
+        return redirect(url_for("game", game_id=game_id))
 
     if game.draw_offered_by and game.draw_offered_by != current_user.id:
         game.status = "finished"
