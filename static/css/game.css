@@ -183,12 +183,50 @@
 }
 
 .player-label {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
     font-size: 14px;
     margin: 8px 0;
 }
 
 .current-player {
-    text-align: right;
+    flex-direction: row-reverse;
+}
+
+.player-clock {
+    min-width: 92px;
+    padding: 7px 10px;
+    border-radius: 6px;
+    background: #303030;
+    color: #d8d8d8;
+    font-family: monospace;
+    font-size: 18px;
+    font-weight: bold;
+    line-height: 1;
+    text-align: center;
+}
+
+.clock-active {
+    background: #f0f0f0;
+    color: #181818;
+}
+
+.clock-warning {
+    color: #d9b86c;
+}
+
+.clock-active.clock-warning {
+    color: #8a5f00;
+}
+
+.clock-danger {
+    color: #d96c6c;
+}
+
+.clock-active.clock-danger {
+    color: #9e2626;
 }
 
 .actions {

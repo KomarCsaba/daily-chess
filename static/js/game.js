@@ -9,7 +9,13 @@ const {
     gameResult,
     turn: initialTurnColor,
     turnDeadline: initialTurnDeadline,
-    turnTimeHours
+    turnTimeHours,
+    turnTimeSeconds,
+    timeControlLabel,
+    timeControlDescription,
+    timeControlMode: initialTimeControlMode,
+    whiteTimeRemaining: initialWhiteTimeRemaining,
+    blackTimeRemaining: initialBlackTimeRemaining
 } = window.GAME_CONFIG;
 
 const PIECES = {
@@ -28,6 +34,9 @@ let currentDrawOfferedBy = drawOfferedBy;
 let currentResult = gameResult;
 let currentTurn = initialTurnColor;
 let currentTurnDeadline = initialTurnDeadline;
+let currentTimeControlMode = initialTimeControlMode;
+let currentWhiteTimeRemaining = initialWhiteTimeRemaining;
+let currentBlackTimeRemaining = initialBlackTimeRemaining;
 let timeoutSyncRequested = false;
 
 let checkedKingSquare = null;
@@ -49,6 +58,9 @@ socket.on("game_update", async (data) => {
     currentDrawOfferedBy = data.draw_offered_by ?? null;
     currentTurn = data.turn;
     currentTurnDeadline = data.turn_deadline;
+    currentTimeControlMode = data.time_control_mode;
+    currentWhiteTimeRemaining = data.white_time_remaining;
+    currentBlackTimeRemaining = data.black_time_remaining;
     timeoutSyncRequested = false;
 
     // Determine whose turn it is from the server payload
@@ -264,6 +276,8 @@ async function makeMove(move) {
         isMyTurn = false;
         currentTurn = data.turn;
         currentTurnDeadline = data.turn_deadline;
+        currentWhiteTimeRemaining = data.white_time_remaining ?? currentWhiteTimeRemaining;
+        currentBlackTimeRemaining = data.black_time_remaining ?? currentBlackTimeRemaining;
         timeoutSyncRequested = false;
 
         clearSelection();
@@ -307,6 +321,12 @@ function formatDuration(totalSeconds) {
     const minutes = Math.floor((seconds % 3600) / 60);
     const remainingSeconds = seconds % 60;
 
+    if (hours >= 24) {
+        const days = Math.floor(hours / 24);
+        const dayHours = hours % 24;
+        return `${days}d ${dayHours}h`;
+    }
+
     if (hours >= 1) {
         return `${hours}h ${String(minutes).padStart(2, "0")}m`;
     }
@@ -322,14 +342,16 @@ function updateTimer() {
     valueEl.className = "timer-value";
 
     if (gameStatus === "waiting") {
-        labelEl.textContent = "Starts when opponent joins";
-        valueEl.textContent = `${turnTimeHours}h per move`;
+        labelEl.textContent = `${timeControlLabel} starts when opponent joins`;
+        valueEl.textContent = timeControlDescription;
+        updatePlayerClocks(null);
         return;
     }
 
     if (gameStatus === "finished") {
-        labelEl.textContent = "Game finished";
+        labelEl.textContent = `${timeControlLabel} game finished`;
         valueEl.textContent = currentResult === "draw" ? "Draw" : "Clock stopped";
+        updatePlayerClocks(null);
         return;
     }
 
@@ -342,7 +364,7 @@ function updateTimer() {
     const deadline = Date.parse(currentTurnDeadline);
     const secondsLeft = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
 
-    labelEl.textContent = currentTurn === myColor ? "Your clock" : "Opponent clock";
+    labelEl.textContent = currentTurn === myColor ? `${timeControlLabel}: Your clock` : `${timeControlLabel}: Opponent clock`;
     valueEl.textContent = formatDuration(secondsLeft);
 
     if (secondsLeft <= 3600) {
@@ -355,6 +377,47 @@ function updateTimer() {
         timeoutSyncRequested = true;
         syncGameState();
     }
+
+    updatePlayerClocks(secondsLeft);
+}
+
+function getDisplayedClockSeconds(color, activeSecondsLeft) {
+    if (currentTimeControlMode !== "clock") {
+        return color === currentTurn ? activeSecondsLeft : turnTimeSeconds;
+    }
+
+    if (color === currentTurn) {
+        return activeSecondsLeft;
+    }
+
+    return color === "white" ? currentWhiteTimeRemaining : currentBlackTimeRemaining;
+}
+
+function renderPlayerClock(element, color, activeSecondsLeft) {
+    if (!element) return;
+
+    element.className = "player-clock";
+    const seconds = getDisplayedClockSeconds(color, activeSecondsLeft);
+    element.textContent = formatDuration(seconds ?? turnTimeSeconds);
+
+    if (gameStatus === "active" && color === currentTurn) {
+        element.classList.add("clock-active");
+    }
+
+    if (seconds <= 60) {
+        element.classList.add("clock-danger");
+    } else if (seconds <= 5 * 60) {
+        element.classList.add("clock-warning");
+    }
+}
+
+function updatePlayerClocks(activeSecondsLeft) {
+    const myClock = document.getElementById("my-clock");
+    const opponentClock = document.getElementById("opponent-clock");
+    const opponentColor = myColor === "white" ? "black" : "white";
+
+    renderPlayerClock(myClock, myColor, activeSecondsLeft);
+    renderPlayerClock(opponentClock, opponentColor, activeSecondsLeft);
 }
 
 /* =========================
@@ -553,6 +616,9 @@ async function syncGameState() {
         currentDrawOfferedBy = data.draw_offered_by;
         currentTurn = data.turn;
         currentTurnDeadline = data.turn_deadline;
+        currentTimeControlMode = data.time_control_mode;
+        currentWhiteTimeRemaining = data.white_time_remaining;
+        currentBlackTimeRemaining = data.black_time_remaining;
         timeoutSyncRequested = false;
 
         setCheckedKingSquare(data.checked_king_square);

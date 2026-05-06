@@ -4,6 +4,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from flask_socketio import SocketIO, join_room, leave_room
 from flask_mail import Mail, Message
 from models import db, User, Game
+from sqlalchemy import inspect, text
 import chess
 import uuid
 import os
@@ -31,6 +32,33 @@ app.config["MAIL_DEFAULT_SENDER"] = os.environ.get("MAIL_USERNAME")
 app.config["BASE_URL"] = os.environ.get("BASE_URL", "http://localhost:8080")
 app.config["RESEND_API_KEY"] = os.environ.get("RESEND_API_KEY")
 app.config["TURN_TIME_HOURS"] = int(os.environ.get("TURN_TIME_HOURS", "24"))
+
+TIME_CONTROLS = {
+    "daily": {
+        "label": "Daily",
+        "mode": "per_move",
+        "seconds": app.config["TURN_TIME_HOURS"] * 60 * 60,
+        "description": f"{app.config['TURN_TIME_HOURS']}h per move",
+    },
+    "rapid": {
+        "label": "Rapid",
+        "mode": "clock",
+        "seconds": 10 * 60,
+        "description": "10 min",
+    },
+    "blitz": {
+        "label": "Blitz",
+        "mode": "clock",
+        "seconds": 5 * 60,
+        "description": "5 min",
+    },
+    "bullet": {
+        "label": "Bullet",
+        "mode": "clock",
+        "seconds": 60,
+        "description": "1 min",
+    },
+}
 
 database_url = os.environ.get("DATABASE_URL", "sqlite:///chess.db")
 if database_url.startswith("postgres://"):
@@ -99,10 +127,66 @@ def get_checked_king_square(board_fen):
         return None
 
 
+def get_time_control(game):
+    return TIME_CONTROLS.get(game.time_control or "daily", TIME_CONTROLS["daily"])
+
+
+def get_time_control_mode(game):
+    return game.time_control_mode or get_time_control(game)["mode"]
+
+
+def get_turn_time_seconds(game):
+    return game.turn_time_seconds or get_time_control(game)["seconds"]
+
+
 def get_turn_deadline(game):
     if game.status != "active" or not game.last_move_at:
         return None
-    return game.last_move_at + timedelta(hours=app.config["TURN_TIME_HOURS"])
+
+    if get_time_control_mode(game) == "clock":
+        remaining = game.white_time_remaining if game.turn == "white" else game.black_time_remaining
+        remaining = remaining if remaining is not None else get_turn_time_seconds(game)
+        return game.last_move_at + timedelta(seconds=remaining)
+
+    return game.last_move_at + timedelta(seconds=get_turn_time_seconds(game))
+
+
+def get_clock_seconds(game):
+    if get_time_control_mode(game) != "clock":
+        return {
+            "white": get_turn_time_seconds(game),
+            "black": get_turn_time_seconds(game),
+        }
+
+    white_seconds = game.white_time_remaining
+    black_seconds = game.black_time_remaining
+
+    if white_seconds is None:
+        white_seconds = get_turn_time_seconds(game)
+    if black_seconds is None:
+        black_seconds = get_turn_time_seconds(game)
+
+    if game.status == "active" and game.last_move_at:
+        elapsed = max(0, int((datetime.utcnow() - game.last_move_at).total_seconds()))
+        if game.turn == "white":
+            white_seconds = max(0, white_seconds - elapsed)
+        else:
+            black_seconds = max(0, black_seconds - elapsed)
+
+    return {"white": white_seconds, "black": black_seconds}
+
+
+def update_active_clock(game):
+    if get_time_control_mode(game) != "clock" or game.status != "active" or not game.last_move_at:
+        return
+
+    elapsed = max(0, int((datetime.utcnow() - game.last_move_at).total_seconds()))
+    if game.turn == "white":
+        remaining = game.white_time_remaining if game.white_time_remaining is not None else get_turn_time_seconds(game)
+        game.white_time_remaining = max(0, remaining - elapsed)
+    else:
+        remaining = game.black_time_remaining if game.black_time_remaining is not None else get_turn_time_seconds(game)
+        game.black_time_remaining = max(0, remaining - elapsed)
 
 
 def apply_timeout_if_needed(game):
@@ -110,6 +194,7 @@ def apply_timeout_if_needed(game):
     if not deadline or datetime.utcnow() < deadline:
         return False
 
+    update_active_clock(game)
     timed_out_color = game.turn
     winner = "black" if timed_out_color == "white" else "white"
     game.status = "finished"
@@ -123,6 +208,8 @@ def serialize_game_state(game, user_id=None):
     seconds_remaining = None
     if deadline:
         seconds_remaining = max(0, int((deadline - datetime.utcnow()).total_seconds()))
+    clocks = get_clock_seconds(game)
+    time_control = get_time_control(game)
 
     payload = {
         "fen": game.board_fen,
@@ -136,7 +223,14 @@ def serialize_game_state(game, user_id=None):
         "checked_king_square": get_checked_king_square(game.board_fen),
         "turn_deadline": deadline.isoformat() + "Z" if deadline else None,
         "seconds_remaining": seconds_remaining,
-        "turn_time_hours": app.config["TURN_TIME_HOURS"],
+        "turn_time_seconds": get_turn_time_seconds(game),
+        "turn_time_hours": round(get_turn_time_seconds(game) / 3600, 2),
+        "time_control": game.time_control or "daily",
+        "time_control_label": time_control["label"],
+        "time_control_description": time_control["description"],
+        "time_control_mode": get_time_control_mode(game),
+        "white_time_remaining": clocks["white"],
+        "black_time_remaining": clocks["black"],
     }
 
     if user_id is not None:
@@ -148,6 +242,24 @@ def serialize_game_state(game, user_id=None):
 def broadcast_game_state(game, requesting_user_id=None):
     """Emit a game_update event to everyone in the game's SocketIO room."""
     socketio.emit("game_update", serialize_game_state(game), room=game.id)
+
+
+def ensure_game_timer_columns():
+    inspector = inspect(db.engine)
+    existing_columns = {column["name"] for column in inspector.get_columns("game")}
+    columns = {
+        "time_control": "VARCHAR(20) DEFAULT 'daily'",
+        "time_control_mode": "VARCHAR(20) DEFAULT 'per_move'",
+        "turn_time_seconds": "INTEGER DEFAULT 86400",
+        "white_time_remaining": "INTEGER",
+        "black_time_remaining": "INTEGER",
+    }
+
+    for name, definition in columns.items():
+        if name not in existing_columns:
+            db.session.execute(text(f"ALTER TABLE game ADD COLUMN {name} {definition}"))
+
+    db.session.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -229,17 +341,32 @@ def logout():
 @login_required
 def dashboard():
     games = current_user.get_games()
-    return render_template("dashboard.html", games=games)
+    updated_games = []
+    for game in games:
+        if apply_timeout_if_needed(game):
+            updated_games.append(game)
+    for game in updated_games:
+        broadcast_game_state(game)
+    return render_template("dashboard.html", games=games, time_controls=TIME_CONTROLS)
 
 
-@app.route("/new_game")
+@app.route("/new_game", methods=["GET", "POST"])
 @login_required
 def new_game():
+    selected_control = request.form.get("time_control", "daily") if request.method == "POST" else request.args.get("time_control", "daily")
+    time_control = TIME_CONTROLS.get(selected_control, TIME_CONTROLS["daily"])
+    selected_control = selected_control if selected_control in TIME_CONTROLS else "daily"
+
     game = Game(
         id=str(uuid.uuid4()),
         white_id=current_user.id,
         board_fen=chess.Board().fen(),
-        status="waiting"
+        status="waiting",
+        time_control=selected_control,
+        time_control_mode=time_control["mode"],
+        turn_time_seconds=time_control["seconds"],
+        white_time_remaining=time_control["seconds"] if time_control["mode"] == "clock" else None,
+        black_time_remaining=time_control["seconds"] if time_control["mode"] == "clock" else None,
     )
     db.session.add(game)
     db.session.commit()
@@ -263,8 +390,15 @@ def join_game(game_id):
         flash("You can't join your own game")
         return redirect(url_for("dashboard"))
 
+    time_control = get_time_control(game)
     game.black_id = current_user.id
     game.status = "active"
+    game.time_control = game.time_control or "daily"
+    game.time_control_mode = game.time_control_mode or time_control["mode"]
+    game.turn_time_seconds = game.turn_time_seconds or time_control["seconds"]
+    if get_time_control_mode(game) == "clock":
+        game.white_time_remaining = game.white_time_remaining or get_turn_time_seconds(game)
+        game.black_time_remaining = game.black_time_remaining or get_turn_time_seconds(game)
     game.last_move_at = datetime.utcnow()
     db.session.commit()
 
@@ -318,6 +452,18 @@ def make_move(game_id):
         if move not in board.legal_moves:
             return {"error": "Illegal move"}, 400
 
+        update_active_clock(game)
+
+        if (
+            get_time_control_mode(game) == "clock" and
+            ((game.turn == "white" and game.white_time_remaining == 0) or
+             (game.turn == "black" and game.black_time_remaining == 0))
+        ):
+            db.session.commit()
+            apply_timeout_if_needed(game)
+            broadcast_game_state(game)
+            return {"error": "Game ended on time", "game_status": game.status}, 400
+
         san = board.san(move)
         board.push(move)
 
@@ -363,6 +509,9 @@ def make_move(game_id):
             "turn": response_state["turn"],
             "turn_deadline": response_state["turn_deadline"],
             "seconds_remaining": response_state["seconds_remaining"],
+            "time_control_mode": response_state["time_control_mode"],
+            "white_time_remaining": response_state["white_time_remaining"],
+            "black_time_remaining": response_state["black_time_remaining"],
         }
 
     except Exception as e:
@@ -382,13 +531,20 @@ def rematch(game_id):
         flash("Not your game")
         return redirect(url_for("dashboard"))
 
+    rematch_mode = get_time_control_mode(old_game)
+    rematch_seconds = old_game.turn_time_seconds or get_turn_time_seconds(old_game)
     new_game = Game(
         id=str(uuid.uuid4()),
         white_id=old_game.black_id,
         black_id=old_game.white_id,
         board_fen=chess.Board().fen(),
         status="waiting",
-        turn="white"
+        turn="white",
+        time_control=old_game.time_control or "daily",
+        time_control_mode=rematch_mode,
+        turn_time_seconds=rematch_seconds,
+        white_time_remaining=rematch_seconds if rematch_mode == "clock" else None,
+        black_time_remaining=rematch_seconds if rematch_mode == "clock" else None,
     )
     db.session.add(new_game)
     db.session.commit()
@@ -531,6 +687,7 @@ def check_square(game_id):
 # create tables on startup
 with app.app_context():
     db.create_all()
+    ensure_game_timer_columns()
 
 if __name__ == "__main__":
     # Use socketio.run instead of app.run

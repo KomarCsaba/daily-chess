@@ -3,7 +3,20 @@
 {% block content %}
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px;">
     <h1>Your Games</h1>
-    <a href="/new_game" class="btn">+ New Game</a>
+</div>
+
+<div style="background-color: #2a2a2a; padding: 20px; border-radius: 10px; margin-bottom: 30px;">
+    <h3 style="margin-bottom: 15px;">New Game</h3>
+    <form action="/new_game" method="POST" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; align-items: stretch;">
+        {% for key, control in time_controls.items() %}
+        <label style="display: block; background-color: #333; border-radius: 8px; padding: 12px; cursor: pointer;">
+            <input type="radio" name="time_control" value="{{ key }}" {% if key == "daily" %}checked{% endif %} style="margin-right: 6px;">
+            <strong>{{ control.label }}</strong>
+            <div style="color: #aaa; font-size: 12px; margin-top: 4px;">{{ control.description }}</div>
+        </label>
+        {% endfor %}
+        <button type="submit" class="btn">Create Game</button>
+    </form>
 </div>
 
 <!-- join a game by code -->
@@ -32,6 +45,7 @@
             </div>
             <div style="color: #aaa; font-size: 13px;">
                 You are playing as <strong>{{ "white" if game.white_id == current_user.id else "black" }}</strong>
+                · {{ (time_controls.get(game.time_control or "daily") or time_controls["daily"]).label }}
                 · Last move: {{ game.last_move_at.strftime("%b %d, %Y") }}
             </div>
         </div>
@@ -56,6 +70,7 @@
         <div>
             <div style="color: #aaa; font-size: 13px;">
                 Created {{ game.created_at.strftime("%b %d, %Y") }}
+                · {{ (time_controls.get(game.time_control or "daily") or time_controls["daily"]).label }}
             </div>
         </div>
         <div style="display: flex; align-items: center; gap: 15px;">

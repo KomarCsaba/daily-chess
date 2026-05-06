@@ -11,7 +11,8 @@
         <div id="status" class="status"></div>
 
         <div class="player-label opponent-name">
-            {{ game.get_opponent(current_user.id).username if game.get_opponent(current_user.id) else "Waiting for opponent..." }}
+            <span>{{ game.get_opponent(current_user.id).username if game.get_opponent(current_user.id) else "Waiting for opponent..." }}</span>
+            <span id="opponent-clock" class="player-clock"></span>
         </div>
 
         <div class="board-wrapper">
@@ -33,7 +34,8 @@
         </div>
 
         <div class="player-label current-player">
-            {{ current_user.username }} (you)
+            <span>{{ current_user.username }} (you)</span>
+            <span id="my-clock" class="player-clock"></span>
         </div>
     </div>
 
@@ -52,7 +54,7 @@
         </div>
 
         <div class="panel">
-            <div class="panel-title">Daily Timer</div>
+            <div class="panel-title">Time Control</div>
             <div id="timer" class="timer">
                 <div id="timer-label" class="timer-label"></div>
                 <div id="timer-value" class="timer-value"></div>
@@ -82,7 +84,13 @@
         turn: {{ initial_state.turn | tojson }},
         turnDeadline: {{ initial_state.turn_deadline | tojson }},
         secondsRemaining: {{ initial_state.seconds_remaining | tojson }},
-        turnTimeHours: {{ initial_state.turn_time_hours | tojson }}
+        turnTimeHours: {{ initial_state.turn_time_hours | tojson }},
+        turnTimeSeconds: {{ initial_state.turn_time_seconds | tojson }},
+        timeControlLabel: {{ initial_state.time_control_label | tojson }},
+        timeControlDescription: {{ initial_state.time_control_description | tojson }},
+        timeControlMode: {{ initial_state.time_control_mode | tojson }},
+        whiteTimeRemaining: {{ initial_state.white_time_remaining | tojson }},
+        blackTimeRemaining: {{ initial_state.black_time_remaining | tojson }}
     };
 </script>
 <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>

@@ -37,6 +37,11 @@ class Game(db.Model):
 
     # NEW
     draw_offered_by = db.Column(db.Integer, nullable=True)
+    time_control = db.Column(db.String(20), default="daily")
+    time_control_mode = db.Column(db.String(20), default="per_move")
+    turn_time_seconds = db.Column(db.Integer, default=86400)
+    white_time_remaining = db.Column(db.Integer, nullable=True)
+    black_time_remaining = db.Column(db.Integer, nullable=True)
 
     def get_moves_list(self):
         if not self.move_history:
