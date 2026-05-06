@@ -487,6 +487,8 @@ def new_game():
         turn_time_seconds=time_control["seconds"],
         white_time_remaining=time_control["seconds"] if time_control["mode"] == "clock" else None,
         black_time_remaining=time_control["seconds"] if time_control["mode"] == "clock" else None,
+        halfmove_clock=0,
+        position_history="",
     )
     db.session.add(game)
     db.session.commit()
@@ -594,6 +596,17 @@ def make_move(game_id):
         is_capture = board.is_capture(move)
         is_castling = board.is_castling(move)
         is_promotion = move.promotion is not None
+        is_pawn_move = board.piece_at(move.from_square).piece_type == chess.PAWN
+        
+        # Update halfmove clock for fifty-move rule
+        if is_capture or is_pawn_move:
+            game.halfmove_clock = 0
+        else:
+            game.halfmove_clock += 1
+        
+        # Add current position to history before move
+        game.add_position_to_history(board.fen())
+        
         san = board.san(move)
         board.push(move)
 
@@ -627,6 +640,16 @@ def make_move(game_id):
             game.result = f"{winner}_wins"
         elif board.is_stalemate() or board.is_insufficient_material():
             move_flags.append("draw")
+            game.status = "finished"
+            game.result = "draw"
+        elif game.is_threefold_repetition():
+            move_flags.append("draw")
+            move_flags.append("threefold_repetition")
+            game.status = "finished"
+            game.result = "draw"
+        elif game.is_fifty_move_rule():
+            move_flags.append("draw")
+            move_flags.append("fifty_move_rule")
             game.status = "finished"
             game.result = "draw"
 
@@ -693,6 +716,8 @@ def rematch(game_id):
         turn_time_seconds=rematch_seconds,
         white_time_remaining=rematch_seconds if rematch_mode == "clock" else None,
         black_time_remaining=rematch_seconds if rematch_mode == "clock" else None,
+        halfmove_clock=0,
+        position_history="",
     )
     db.session.add(new_game)
     db.session.commit()

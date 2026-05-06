@@ -93,6 +93,31 @@
     </div>
 </div>
 
+<!-- Piece Promotion Modal -->
+<div id="promotion-modal" class="promotion-modal" hidden>
+    <div class="promotion-content">
+        <h3>Choose Promotion Piece</h3>
+        <div class="promotion-pieces">
+            <button class="promotion-piece" data-piece="q">
+                <span class="promotion-icon">♕</span>
+                <span>Queen</span>
+            </button>
+            <button class="promotion-piece" data-piece="r">
+                <span class="promotion-icon">♖</span>
+                <span>Rook</span>
+            </button>
+            <button class="promotion-piece" data-piece="b">
+                <span class="promotion-icon">♗</span>
+                <span>Bishop</span>
+            </button>
+            <button class="promotion-piece" data-piece="n">
+                <span class="promotion-icon">♘</span>
+                <span>Knight</span>
+            </button>
+        </div>
+    </div>
+</div>
+
 <script>
     window.GAME_CONFIG = {
         gameId: {{ game.id | tojson }},

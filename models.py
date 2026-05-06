@@ -45,6 +45,10 @@ class Game(db.Model):
     black_time_remaining = db.Column(db.Integer, nullable=True)
     last_move_uci = db.Column(db.String(10), nullable=True)
     last_move_flags = db.Column(db.String(120), nullable=True)
+    
+    # For fifty-move rule and threefold repetition
+    halfmove_clock = db.Column(db.Integer, default=0)  # Moves since last capture/pawn move
+    position_history = db.Column(db.Text, default="")  # FEN positions separated by |
 
     def get_moves_list(self):
         if not self.move_history:
@@ -62,3 +66,26 @@ class Game(db.Model):
         if self.white_id == user_id:
             return self.black_player
         return self.white_player
+    
+    def get_position_history(self):
+        """Get list of FEN positions from history"""
+        if not self.position_history:
+            return []
+        return self.position_history.split("|")
+    
+    def add_position_to_history(self, fen):
+        """Add current position to history"""
+        history = self.get_position_history()
+        history.append(fen)
+        self.position_history = "|".join(history)
+    
+    def is_threefold_repetition(self):
+        """Check if current position has occurred three times"""
+        current_fen = self.board_fen.split()[0]  # Only position part, ignore move counters
+        history = self.get_position_history()
+        count = sum(1 for pos in history if pos.split()[0] == current_fen)
+        return count >= 3
+    
+    def is_fifty_move_rule(self):
+        """Check if fifty-move rule applies (100 halfmoves without capture/pawn move)"""
+        return self.halfmove_clock >= 100

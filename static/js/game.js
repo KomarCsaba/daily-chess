@@ -521,22 +521,51 @@ async function onSquareClick(event) {
 
     const from = colRowToUci(selectedSquare.col, selectedSquare.row);
     const to = colRowToUci(col, row);
-    let moveStr = from + to;
-
     const fromPiece = pieces[`${selectedSquare.col},${selectedSquare.row}`];
+    
+    // Check if this is a pawn promotion
     if (
         fromPiece?.toLowerCase() === "p" &&
         ((myColor === "white" && row === 0) || (myColor === "black" && row === 7))
     ) {
-        moveStr += "q";
+        showPromotionModal(from, to);
+        return;
     }
 
-    await makeMove(moveStr);
+    await makeMove(from + to);
 }
 
 /* =========================
    Move Submission
 ========================= */
+
+/* =========================
+   Promotion Modal
+========================= */
+
+let pendingPromotionMove = null;
+
+function showPromotionModal(from, to) {
+    pendingPromotionMove = { from, to };
+    const modal = document.getElementById("promotion-modal");
+    modal.hidden = false;
+    
+    // Add event listeners to promotion buttons
+    const buttons = modal.querySelectorAll(".promotion-piece");
+    buttons.forEach(button => {
+        button.onclick = () => {
+            const piece = button.dataset.piece;
+            hidePromotionModal();
+            makeMove(from + to + piece);
+        };
+    });
+}
+
+function hidePromotionModal() {
+    const modal = document.getElementById("promotion-modal");
+    modal.hidden = true;
+    pendingPromotionMove = null;
+}
 
 async function makeMove(move) {
     try {
