@@ -3,6 +3,7 @@ flask-sqlalchemy
 flask-login
 flask-mail
 flask-socketio
+simple-websocket
 werkzeug
 chess
 gunicorn

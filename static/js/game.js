@@ -37,8 +37,6 @@ socket.on("connect", () => {
 });
 
 socket.on("game_update", async (data) => {
-    const wasMyTurn = isMyTurn;
-
     currentFen = data.fen;
     gameStatus = data.status;
     currentResult = data.result;
@@ -60,7 +58,7 @@ socket.on("game_update", async (data) => {
     }
 
     clearSelection();
-    await updateCheckHighlight();
+    setCheckedKingSquare(data.checked_king_square);
     renderMoveList(data.move_history || []);
     updateBoard();
     updateStatus();
@@ -256,7 +254,7 @@ async function makeMove(move) {
         isMyTurn = false;
 
         clearSelection();
-        await updateCheckHighlight();
+        setCheckedKingSquare(data.checked_king_square);
         updateBoard();
         updateStatus();
         updateActions();
@@ -325,16 +323,6 @@ function renderMoveList(moves) {
     }
 
     movesEl.scrollTop = movesEl.scrollHeight;
-}
-
-async function updateMoveList() {
-    try {
-        const res = await fetch(`/moves/${gameId}`);
-        const data = await res.json();
-        renderMoveList(data.moves);
-    } catch (err) {
-        console.error("Failed to update move list", err);
-    }
 }
 
 /* =========================
@@ -458,22 +446,19 @@ function renderCoordinates() {
    Check Highlight
 ========================= */
 
-async function updateCheckHighlight() {
-    try {
-        const res = await fetch(`/check_square/${gameId}`);
-        if (!res.ok) { checkedKingSquare = null; return; }
-
-        const data = await res.json();
-        if (!data.square) { checkedKingSquare = null; return; }
-
-        const parts = data.square.split(",");
-        if (parts.length !== 2) { checkedKingSquare = null; return; }
-
-        checkedKingSquare = { col: Number(parts[0]), row: Number(parts[1]) };
-    } catch (err) {
-        console.error("Check highlight failed", err);
+function setCheckedKingSquare(square) {
+    if (!square) {
         checkedKingSquare = null;
+        return;
     }
+
+    const parts = square.split(",");
+    if (parts.length !== 2) {
+        checkedKingSquare = null;
+        return;
+    }
+
+    checkedKingSquare = { col: Number(parts[0]), row: Number(parts[1]) };
 }
 
 /* =========================
@@ -491,11 +476,11 @@ async function syncGameState() {
         currentResult = data.result;
         currentDrawOfferedBy = data.draw_offered_by;
 
-        await updateCheckHighlight();
+        setCheckedKingSquare(data.checked_king_square);
         updateBoard();
         updateStatus();
         updateActions();
-        await updateMoveList();
+        renderMoveList(data.move_history || []);
     } catch (err) {
         console.error("Failed initial sync", err);
     }

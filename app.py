@@ -39,8 +39,10 @@ app.config["SQLALCHEMY_DATABASE_URI"] = database_url
 db.init_app(app)
 mail = Mail(app)
 
-# Allow all origins for dev; tighten in production via CORS_ALLOWED_ORIGINS env var
-socketio = SocketIO(app, cors_allowed_origins="*")
+# Allow all origins for dev; tighten in production via CORS_ALLOWED_ORIGINS env var.
+# The threading async mode uses simple-websocket in production, avoiding the
+# slow HTTP long-polling fallback.
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 
 print("MAIL_USERNAME:", app.config["MAIL_USERNAME"])
 print("MAIL_PASSWORD exists:", bool(app.config["MAIL_PASSWORD"]))
@@ -78,6 +80,24 @@ def send_turn_notification(game, recipient):
         print(f"Email error: {e}")
 
 
+def get_checked_king_square(board_fen):
+    try:
+        board = chess.Board(board_fen)
+        if not board.is_check():
+            return None
+
+        king_square = board.king(board.turn)
+        if king_square is None:
+            return None
+
+        col = chess.square_file(king_square)
+        row = 7 - chess.square_rank(king_square)
+        return f"{col},{row}"
+    except Exception as e:
+        print("Check square error:", e)
+        return None
+
+
 def broadcast_game_state(game, requesting_user_id=None):
     """Emit a game_update event to everyone in the game's SocketIO room."""
     payload = {
@@ -89,6 +109,7 @@ def broadcast_game_state(game, requesting_user_id=None):
         "white_id": game.white_id,
         "black_id": game.black_id,
         "turn": game.turn,
+        "checked_king_square": get_checked_king_square(game.board_fen),
     }
     socketio.emit("game_update", payload, room=game.id)
 
@@ -293,7 +314,8 @@ def make_move(game_id):
         return {
             "success": True,
             "fen": board.fen(),
-            "game_status": game.status
+            "game_status": game.status,
+            "checked_king_square": get_checked_king_square(game.board_fen),
         }
 
     except Exception as e:
@@ -366,7 +388,9 @@ def game_state(game_id):
         "status": game.status,
         "is_my_turn": game.is_players_turn(current_user.id),
         "result": game.result,
-        "draw_offered_by": game.draw_offered_by
+        "draw_offered_by": game.draw_offered_by,
+        "move_history": game.get_moves_list(),
+        "checked_king_square": get_checked_king_square(game.board_fen),
     }
 
 
@@ -441,22 +465,7 @@ def check_square(game_id):
     if not game:
         return {"square": None}
 
-    try:
-        board = chess.Board(game.board_fen)
-        if not board.is_check():
-            return {"square": None}
-
-        king_square = board.king(board.turn)
-        if king_square is None:
-            return {"square": None}
-
-        col = chess.square_file(king_square)
-        row = 7 - chess.square_rank(king_square)
-        return {"square": f"{col},{row}"}
-
-    except Exception as e:
-        print("Check square error:", e)
-        return {"square": None}
+    return {"square": get_checked_king_square(game.board_fen)}
 
 
 # create tables on startup

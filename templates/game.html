@@ -63,14 +63,14 @@
 
 <script>
     window.GAME_CONFIG = {
-        gameId: "{{ game.id }}",
-        myColor: "{{ 'white' if game.white_id == current_user.id else 'black' }}",
-        currentFen: "{{ game.board_fen }}",
-        isMyTurn: "{{ game.is_players_turn(current_user.id) | tojson }}",
-        gameStatus: "{{ game.status }}",
-        drawOfferedBy: "{{ game.draw_offered_by if game.draw_offered_by else 'null' }}",
-        myId: "{{ current_user.id }}",
-        gameResult: "{{ game.result | tojson }}"
+        gameId: {{ game.id | tojson }},
+        myColor: {{ ('white' if game.white_id == current_user.id else 'black') | tojson }},
+        currentFen: {{ game.board_fen | tojson }},
+        isMyTurn: {{ game.is_players_turn(current_user.id) | tojson }},
+        gameStatus: {{ game.status | tojson }},
+        drawOfferedBy: {{ game.draw_offered_by | tojson }},
+        myId: {{ current_user.id | tojson }},
+        gameResult: {{ game.result | tojson }}
     };
 </script>
 <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
