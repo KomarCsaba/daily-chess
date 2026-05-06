@@ -1,7 +1,7 @@
 from flask import Flask, render_template, redirect, url_for, request, flash
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
-from flask_socketio import SocketIO, join_room, leave_room
+from flask_socketio import SocketIO, emit, join_room, leave_room
 from flask_mail import Mail, Message
 from models import db, User, Game
 from sqlalchemy import inspect, text
@@ -143,6 +143,12 @@ def generate_join_code(length=6):
 
 def get_game_invite_url(game):
     return f"{app.config['BASE_URL']}/join/{game.join_code or game.id}"
+
+
+def user_can_access_game(game, user_id):
+    if not game or user_id is None:
+        return False
+    return user_id in (game.white_id, game.black_id)
 
 
 def get_time_control_mode(game):
@@ -296,15 +302,34 @@ def ensure_game_timer_columns():
 @socketio.on("join_game")
 def on_join_game(data):
     game_id = data.get("game_id")
-    if game_id:
-        join_room(game_id)
+    if not current_user.is_authenticated:
+        emit("socket_error", {"error": "Authentication required"})
+        return
+
+    if not game_id:
+        emit("socket_error", {"error": "Missing game id"})
+        return
+
+    game = Game.query.get(game_id)
+    if not user_can_access_game(game, current_user.id):
+        emit("socket_error", {"error": "Not allowed to join this game"})
+        return
+
+    join_room(game_id)
+    emit("joined_game", {"game_id": game_id})
 
 
 @socketio.on("leave_game")
 def on_leave_game(data):
     game_id = data.get("game_id")
-    if game_id:
-        leave_room(game_id)
+    if not current_user.is_authenticated or not game_id:
+        return
+
+    game = Game.query.get(game_id)
+    if not user_can_access_game(game, current_user.id):
+        return
+
+    leave_room(game_id)
 
 
 # ---------------------------------------------------------------------------
